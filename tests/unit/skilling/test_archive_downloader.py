@@ -1,3 +1,4 @@
+import asyncio
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -30,12 +31,11 @@ def test_archive_downloader_extracts_target_skill_directory(tmp_path: Path, monk
         }
     )
 
-    monkeypatch.setattr(
-        GitHubArchiveDownloader,
-        "_download_archive",
-        lambda self, archive_url: archive_bytes,
-    )
-    extracted = downloader.fetch(skill_ref, tmp_path)
+    async def fake_download_archive(self, archive_url):  # type: ignore[no-untyped-def]
+        return archive_bytes
+
+    monkeypatch.setattr(GitHubArchiveDownloader, "_download_archive", fake_download_archive)
+    extracted = asyncio.run(downloader.fetch(skill_ref, tmp_path))
 
     assert extracted.joinpath("SKILL.md").exists()
     assert extracted.joinpath("scripts/recalc.py").exists()
@@ -69,7 +69,7 @@ def test_archive_downloader_respects_explicit_proxy(monkeypatch) -> None:
         return FakeOpener()
 
     monkeypatch.setattr("urllib.request.build_opener", fake_build_opener)
-    downloader._download_archive("https://example.com/archive.zip")
+    asyncio.run(downloader._download_archive("https://example.com/archive.zip"))
 
     handlers = captured["handlers"]
     assert handlers

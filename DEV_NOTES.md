@@ -20,20 +20,23 @@ Use this section to record each PR in a lightweight format.
 
 ### Current
 
-- PR: 3
-- Title: GitHub Skill Installer
+- PR: 4
+- Title: Tooling Layer
 - Branch: current working branch
 - Status: in progress
 - Summary:
-  - added GitHub skill URL parsing
-  - added fixture-backed skill installer and manifest generation
-  - added install integration coverage to ensure installed skills load correctly
+  - added runtime-owned tooling primitives and registry
+  - added built-in `read`, `write`, and `exec_script` tools
+  - added skill-aware script validation for `exec_script`
+  - added tooling integration coverage driven by fixtures
 - Tests:
   - `./.venv/bin/pytest -q tests/unit/common tests/test_echo_agent.py`
   - `./.venv/bin/pytest -q tests/unit/skilling tests/integration/test_skills_pipeline.py`
   - `./.venv/bin/pytest -q tests/unit/skilling/test_github.py tests/unit/skilling/test_manifest.py tests/unit/skilling/test_install.py tests/integration/test_skill_install_pipeline.py`
+  - `./.venv/bin/pytest -q tests/unit/tooling tests/integration/test_tool_execution_pipeline.py`
 - Notes:
-  - current installer uses a downloader interface with fixture-backed integration tests
+  - `tools` remain runtime-owned
+  - `scripts` remain the hard boundary for `exec_script`
 
 ### Template
 
@@ -209,9 +212,12 @@ prepare_run()
 ### PR 4 - Tooling Layer
 
 - Goal:
-  - standardize tool registration, policy, and execution for skill-guided actions
+  - standardize runtime-owned tools for skill-guided actions
 - Scope:
   - `clawcore/tooling/base.py`
+  - `clawcore/tooling/builtin/read.py`
+  - `clawcore/tooling/builtin/write.py`
+  - `clawcore/tooling/builtin/exec_script.py`
   - `clawcore/tooling/registry.py`
   - `clawcore/tooling/policy.py`
   - `clawcore/tooling/executor.py`
@@ -219,22 +225,36 @@ prepare_run()
 - Deliverables:
   - base tool protocol
   - tool registry
+  - runtime-owned built-in tools:
+    - `read`
+    - `write`
+    - `exec_script`
   - allowlist and denylist policy
+  - low-risk vs restricted tool policy split
   - structured `ToolCall` and `ToolResult`
-  - one or two demo tools for development
-  - `exec_script` design with explicit skill-aware validation
+  - `exec_script` with explicit skill-aware script validation
 - Unit test acceptance:
   - registry can register and resolve tools
   - duplicate tool registration behavior is explicit
   - policy blocks denied tools
   - executor returns normalized tool results
   - tool failures are surfaced as structured errors
+  - `read` reads file content correctly
+  - `write` writes file content correctly
   - script execution is blocked when the script is not declared by the active skill
+  - script execution succeeds when the script is declared by the active skill
 - Integration test need:
   - yes
 - Integration dataset:
   - `tests/fixtures/tools/cases.json`
-  - include success, blocked, invalid input, undeclared script, and failure cases
+  - include:
+    - read success
+    - write success
+    - blocked tool
+    - declared script success
+    - undeclared script blocked
+    - invalid input
+    - tool failure
 - PR exit criteria:
   - all unit tests pass
   - tool execution integration cases pass locally

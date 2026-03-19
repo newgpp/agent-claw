@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from clawcore.skilling.cli import build_install_skill_parser
 from clawcore.skilling.install import GitHubArchiveDownloader, install_github_skill
 
 
-def main() -> None:
+async def main() -> None:
     parser = build_install_skill_parser()
     args = parser.parse_args()
 
     downloader = GitHubArchiveDownloader(proxy_url=args.proxy)
-    installed = install_github_skill(
+    installed = await install_github_skill(
         args.url,
         skills_root=Path(args.skills_root),
         downloader=downloader,
@@ -29,4 +30,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

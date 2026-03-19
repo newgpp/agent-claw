@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 
@@ -9,7 +10,7 @@ class FixtureDownloader:
     def __init__(self, fixture_dir: Path) -> None:
         self.fixture_dir = fixture_dir
 
-    def fetch(self, skill_ref, destination: Path) -> Path:  # type: ignore[no-untyped-def]
+    async def fetch(self, skill_ref, destination: Path) -> Path:  # type: ignore[no-untyped-def]
         source = self.fixture_dir / skill_ref.default_name
         target = destination / skill_ref.default_name
         for path in source.rglob("*"):
@@ -26,10 +27,12 @@ class FixtureDownloader:
 def test_skill_install_pipeline_installs_and_loads_skill(tmp_path: Path) -> None:
     downloader = FixtureDownloader(Path("tests/fixtures/install/github_download"))
 
-    installed = install_github_skill(
-        "https://github.com/anthropics/skills/tree/main/skills/xlsx",
-        skills_root=tmp_path / "skills",
-        downloader=downloader,
+    installed = asyncio.run(
+        install_github_skill(
+            "https://github.com/anthropics/skills/tree/main/skills/xlsx",
+            skills_root=tmp_path / "skills",
+            downloader=downloader,
+        )
     )
 
     loaded_skills = load_skills(tmp_path / "skills")

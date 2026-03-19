@@ -2,28 +2,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from inspect import isawaitable
 
-ToolHandler = Callable[[dict[str, object]], str]
-SkillHandler = Callable[[str], str]
+from clawcore.tooling.base import BaseTool, ToolExecutionContext
+from clawcore.tooling.registry import CallableTool, ToolRegistry as RuntimeToolRegistry
+
+ToolHandler = Callable[[dict[str, object]], str | Awaitable[str]]
+SkillHandler = Callable[[str], str | Awaitable[str]]
 
 
-class ToolRegistry:
+class ToolRegistry(RuntimeToolRegistry):
     """Stores named tool handlers."""
 
     def __init__(self) -> None:
-        self._tools: dict[str, ToolHandler] = {}
+        super().__init__()
 
-    def register(self, name: str, handler: ToolHandler) -> None:
-        self._tools[name] = handler
+    def register(self, name: str | BaseTool, handler: ToolHandler | None = None) -> None:  # type: ignore[override]
+        if isinstance(name, BaseTool):
+            return super().register(name)
+        if handler is None:
+            raise ValueError("Handler is required when registering a callable tool.")
 
-    def run(self, name: str, payload: dict[str, object]) -> str:
-        if name not in self._tools:
-            raise KeyError(f"Tool '{name}' is not registered.")
-        return self._tools[name](payload)
-
-    def names(self) -> list[str]:
-        return sorted(self._tools)
+        return super().register(CallableTool(name, handler))
 
 
 class SkillRegistry:
@@ -35,10 +36,13 @@ class SkillRegistry:
     def register(self, name: str, handler: SkillHandler) -> None:
         self._skills[name] = handler
 
-    def run(self, name: str, prompt: str) -> str:
+    async def run(self, name: str, prompt: str) -> str:
         if name not in self._skills:
             raise KeyError(f"Skill '{name}' is not registered.")
-        return self._skills[name](prompt)
+        result = self._skills[name](prompt)
+        if isawaitable(result):
+            result = await result
+        return str(result)
 
     def names(self) -> list[str]:
         return sorted(self._skills)

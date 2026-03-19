@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import urllib.request
@@ -24,7 +25,7 @@ from clawcore.skilling.manifest import build_skill_manifest, write_skill_manifes
 class SkillDownloader(Protocol):
     """Download a GitHub skill directory into a local path."""
 
-    def fetch(self, skill_ref: GitHubSkillRef, destination: Path) -> Path:
+    async def fetch(self, skill_ref: GitHubSkillRef, destination: Path) -> Path:
         """Fetch the skill directory and return its local path."""
 
 
@@ -35,10 +36,10 @@ class GitHubArchiveDownloader:
     proxy_url: str | None = None
     timeout_seconds: float = 30.0
 
-    def fetch(self, skill_ref: GitHubSkillRef, destination: Path) -> Path:
-        archive_bytes = self._download_archive(skill_ref.archive_url)
+    async def fetch(self, skill_ref: GitHubSkillRef, destination: Path) -> Path:
+        archive_bytes = await self._download_archive(skill_ref.archive_url)
         extracted_dir = destination / skill_ref.default_name
-        extracted_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(extracted_dir.mkdir, parents=True, exist_ok=True)
 
         with zipfile.ZipFile(BytesIO(archive_bytes)) as archive:
             member_names = archive.namelist()
@@ -53,14 +54,21 @@ class GitHubArchiveDownloader:
                     continue
                 target_path = extracted_dir / relative_name
                 if member_name.endswith("/"):
-                    target_path.mkdir(parents=True, exist_ok=True)
+                    await asyncio.to_thread(target_path.mkdir, parents=True, exist_ok=True)
                     continue
-                target_path.parent.mkdir(parents=True, exist_ok=True)
-                with archive.open(member_name) as source, target_path.open("wb") as output:
-                    output.write(source.read())
+                await asyncio.to_thread(target_path.parent.mkdir, parents=True, exist_ok=True)
+
+                def write_member() -> None:
+                    with archive.open(member_name) as source, target_path.open("wb") as output:
+                        output.write(source.read())
+
+                await asyncio.to_thread(write_member)
         return extracted_dir
 
-    def _download_archive(self, archive_url: str) -> bytes:
+    async def _download_archive(self, archive_url: str) -> bytes:
+        return await asyncio.to_thread(self._download_archive_sync, archive_url)
+
+    def _download_archive_sync(self, archive_url: str) -> bytes:
         handlers: list[urllib.request.BaseHandler] = []
         proxy_url = self.proxy_url or os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
         if proxy_url:
@@ -95,7 +103,7 @@ class InstalledSkill:
     source: GitHubSkillRef
 
 
-def install_github_skill(
+async def install_github_skill(
     url: str,
     *,
     skills_root: str | Path,
@@ -105,21 +113,21 @@ def install_github_skill(
     skill_ref = parse_github_skill_url(url)
     skill_name = skill_ref.default_name
     root = Path(skills_root)
-    root.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(root.mkdir, parents=True, exist_ok=True)
     target_dir = root / skill_name
     downloader_impl = downloader or GitHubArchiveDownloader()
 
     with TemporaryDirectory(prefix="agent-claw-skill-") as tmpdir:
-        downloaded_dir = downloader_impl.fetch(skill_ref, Path(tmpdir))
+        downloaded_dir = await downloader_impl.fetch(skill_ref, Path(tmpdir))
         _validate_downloaded_skill(downloaded_dir)
         scripts = _collect_script_paths(downloaded_dir)
 
         if target_dir.exists():
-            shutil.rmtree(target_dir)
-        shutil.copytree(downloaded_dir, target_dir)
+            await asyncio.to_thread(shutil.rmtree, target_dir)
+        await asyncio.to_thread(shutil.copytree, downloaded_dir, target_dir)
 
     manifest = build_skill_manifest(skill_name=skill_name, source=skill_ref, scripts=scripts)
-    manifest_path = write_skill_manifest(target_dir, manifest)
+    manifest_path = await asyncio.to_thread(write_skill_manifest, target_dir, manifest)
     return InstalledSkill(
         name=skill_name,
         install_dir=target_dir,

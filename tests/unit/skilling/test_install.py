@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,7 @@ class FakeDownloader:
     def __init__(self, fixture_dir: Path) -> None:
         self.fixture_dir = fixture_dir
 
-    def fetch(self, skill_ref: GitHubSkillRef, destination: Path) -> Path:
+    async def fetch(self, skill_ref: GitHubSkillRef, destination: Path) -> Path:
         target = destination / skill_ref.default_name
         target.mkdir(parents=True, exist_ok=True)
         source = self.fixture_dir / skill_ref.default_name
@@ -28,10 +29,12 @@ class FakeDownloader:
 def test_install_github_skill_installs_valid_skill(tmp_path: Path) -> None:
     downloader = FakeDownloader(Path("tests/fixtures/install/github_download"))
 
-    installed = install_github_skill(
-        "https://github.com/anthropics/skills/tree/main/skills/xlsx",
-        skills_root=tmp_path / "skills",
-        downloader=downloader,
+    installed = asyncio.run(
+        install_github_skill(
+            "https://github.com/anthropics/skills/tree/main/skills/xlsx",
+            skills_root=tmp_path / "skills",
+            downloader=downloader,
+        )
     )
 
     assert installed.name == "xlsx"
@@ -44,8 +47,10 @@ def test_install_github_skill_rejects_missing_skill_md(tmp_path: Path) -> None:
     downloader = FakeDownloader(Path("tests/fixtures/install/github_download"))
 
     with pytest.raises(ValueError, match="must contain SKILL.md"):
-        install_github_skill(
-            "https://github.com/anthropics/skills/tree/main/skills/broken-skill",
-            skills_root=tmp_path / "skills",
-            downloader=downloader,
+        asyncio.run(
+            install_github_skill(
+                "https://github.com/anthropics/skills/tree/main/skills/broken-skill",
+                skills_root=tmp_path / "skills",
+                downloader=downloader,
+            )
         )

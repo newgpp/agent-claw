@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from inspect import isawaitable
 
 from clawcore.models import ReActStep
 from clawcore.registry import SkillRegistry, ToolRegistry
+from clawcore.tooling.base import ToolExecutionContext
 from common.observability import logger
 from common.tracing import TraceCollector
 
@@ -33,12 +36,14 @@ class ReActRuntime:
         self.tools = tools or ToolRegistry()
         self.skills = skills or SkillRegistry()
 
-    def run(self, user_input: str, *, max_steps: int = 5) -> str:
+    async def run(self, user_input: str, *, max_steps: int = 5) -> str:
         context = RuntimeContext(user_input=user_input)
         context.trace.record("input", user_input)
 
         for step_index in range(1, max_steps + 1):
             step = self.planner(context)
+            if isawaitable(step):
+                step = await step
             self._record_step(context, step_index, step)
 
             if step.final_answer is not None:
@@ -48,7 +53,11 @@ class ReActRuntime:
             if step.action is None:
                 raise RuntimeError("Planner returned neither an action nor a final answer.")
 
-            tool_output = self.tools.run(step.action.name, step.action.payload)
+            tool_output = await self.tools.run(
+                step.action.name,
+                step.action.payload,
+                context=ToolExecutionContext(),
+            )
             observation = f"{step.action.name}: {tool_output}"
             context.scratchpad.append(observation)
             context.trace.record("observation", observation)

@@ -1,0 +1,43 @@
+[
+  {
+    "name": "read success",
+    "tool": "read",
+    "payload": {
+      "path": "$TMP_READ_FILE"
+    }
+  },
+  {
+    "name": "write success",
+    "tool": "write",
+    "payload": {
+      "path": "written.txt",
+      "content": "hello write"
+    }
+  },
+  {
+    "name": "declared script success",
+    "tool": "exec_script",
+    "payload": {
+      "script": "scripts/release_check.py"
+    }
+  },
+  {
+    "name": "undeclared script blocked",
+    "tool": "exec_script",
+    "payload": {
+      "script": "scripts/not_allowed.py"
+    }
+  },
+  {
+    "name": "invalid input",
+    "tool": "read",
+    "payload": {}
+  },
+  {
+    "name": "blocked tool",
+    "tool": "blocked_tool",
+    "payload": {
+      "path": "$TMP_READ_FILE"
+    }
+  }
+]
