@@ -36,6 +36,39 @@ python3 examples/basic_run.py
 pytest
 ```
 
+## Install Skills
+
+`agent-claw` currently supports installing document-skills from GitHub directory
+URLs.
+
+Example:
+
+```bash
+PYTHONPATH=src ./.venv/bin/python examples/install_skill.py \
+  "https://github.com/anthropics/skills/tree/main/skills/xlsx" \
+  --skills-root skills
+```
+
+If you use a local proxy, pass it explicitly:
+
+```bash
+PYTHONPATH=src ./.venv/bin/python examples/install_skill.py \
+  "https://github.com/anthropics/skills/tree/main/skills/xlsx" \
+  --skills-root skills \
+  --proxy http://127.0.0.1:7890
+```
+
+The installer will:
+
+- parse the GitHub skill URL
+- download the target skill directory
+- require `SKILL.md`
+- preserve the skill's `scripts/` directory
+- generate a local `skill.json`
+
+Installed skills are meant to be local runtime assets and are ignored by git
+through `skills/` in `.gitignore`.
+
 ## Initial Goal
 
 This repository starts with a minimal runtime skeleton so the architecture is
