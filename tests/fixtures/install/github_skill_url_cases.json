@@ -1,0 +1,9 @@
+[
+  {
+    "url": "https://github.com/anthropics/skills/tree/main/skills/xlsx",
+    "repo": "anthropics/skills",
+    "ref": "main",
+    "path": "skills/xlsx",
+    "name": "xlsx"
+  }
+]

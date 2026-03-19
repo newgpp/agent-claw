@@ -20,19 +20,20 @@ Use this section to record each PR in a lightweight format.
 
 ### Current
 
-- PR: 2
-- Title: Skilling Layer
+- PR: 3
+- Title: GitHub Skill Installer
 - Branch: current working branch
 - Status: in progress
 - Summary:
-  - added `clawcore.skilling` package with loader, prompt builder, and document-skill metadata support
-  - added fixture-backed unit tests for skill loading and prompt rendering
-  - added first integration test for the skills pipeline
+  - added GitHub skill URL parsing
+  - added fixture-backed skill installer and manifest generation
+  - added install integration coverage to ensure installed skills load correctly
 - Tests:
   - `./.venv/bin/pytest -q tests/unit/common tests/test_echo_agent.py`
   - `./.venv/bin/pytest -q tests/unit/skilling tests/integration/test_skills_pipeline.py`
+  - `./.venv/bin/pytest -q tests/unit/skilling/test_github.py tests/unit/skilling/test_manifest.py tests/unit/skilling/test_install.py tests/integration/test_skill_install_pipeline.py`
 - Notes:
-  - fixture datasets created under `tests/fixtures/skills`
+  - current installer uses a downloader interface with fixture-backed integration tests
 
 ### Template
 

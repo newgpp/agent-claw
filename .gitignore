@@ -201,6 +201,9 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Local installed skills
+skills/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
