@@ -102,3 +102,90 @@ def test_runtime_blocks_undeclared_script_execution(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="not declared"):
         asyncio.run(runtime.run("run", active_skill=active_skill, workspace_dir=tmp_path, max_steps=1))
+
+
+def test_runtime_promotes_active_skill_after_read_skill(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "file-summary"
+    skill_dir.mkdir(parents=True)
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.write_text("# File Summary\n\nSummarize a workspace file.\n", encoding="utf-8")
+    skill = SkillDefinition(
+        name="file-summary",
+        description="Summarize files.",
+        directory=skill_dir,
+        skill_file=skill_file,
+    )
+    registry = ToolRegistry()
+    from clawcore.tooling import ReadSkillTool
+
+    registry.register(ReadSkillTool())
+    executor = ToolExecutor(registry, policy=ToolPolicy())
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        if session.state.active_skill is None:
+            return ReActStep(
+                thought="Load the skill first.",
+                action=ToolCall(name="read_skill", payload={"skill": "file-summary"}),
+            )
+        return ReActStep(thought="done", final_answer=session.state.active_skill.name)
+
+    runtime = ReActRuntime(llm=MockLLM(step_fn), tool_executor=executor)
+
+    result = asyncio.run(runtime.run("summarize", skills=[skill], workspace_dir=tmp_path))
+
+    assert result == "file-summary"
+
+
+def test_runtime_can_load_multiple_skills_in_one_run(tmp_path: Path) -> None:
+    first_dir = tmp_path / "skills" / "file-summary"
+    first_dir.mkdir(parents=True)
+    first_file = first_dir / "SKILL.md"
+    first_file.write_text("# File Summary\n\nSummarize a workspace file.\n", encoding="utf-8")
+    first_skill = SkillDefinition(
+        name="file-summary",
+        description="Summarize files.",
+        directory=first_dir,
+        skill_file=first_file,
+    )
+    second_dir = tmp_path / "skills" / "release-checker"
+    second_dir.mkdir(parents=True)
+    second_file = second_dir / "SKILL.md"
+    second_file.write_text("# Release Checker\n\nValidate release readiness.\n", encoding="utf-8")
+    second_skill = SkillDefinition(
+        name="release-checker",
+        description="Validate release steps.",
+        directory=second_dir,
+        skill_file=second_file,
+    )
+    loaded_names: list[str] = []
+    registry = ToolRegistry()
+    from clawcore.tooling import ReadSkillTool
+
+    registry.register(ReadSkillTool())
+    executor = ToolExecutor(registry, policy=ToolPolicy())
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        loaded_names[:] = [skill.name for skill in session.state.loaded_skills]
+        if not session.state.loaded_skills:
+            return ReActStep(
+                thought="Load the first skill.",
+                action=ToolCall(name="read_skill", payload={"skill": "file-summary"}),
+            )
+        if len(session.state.loaded_skills) == 1:
+            return ReActStep(
+                thought="Load the second skill as well.",
+                action=ToolCall(name="read_skill", payload={"skill": "release-checker"}),
+            )
+        return ReActStep(
+            thought="I have both skills loaded.",
+            final_answer=",".join(skill.name for skill in session.state.loaded_skills),
+        )
+
+    runtime = ReActRuntime(llm=MockLLM(step_fn), tool_executor=executor)
+
+    result = asyncio.run(
+        runtime.run("load both", skills=[first_skill, second_skill], workspace_dir=tmp_path, max_steps=4)
+    )
+
+    assert loaded_names == ["file-summary", "release-checker"]
+    assert result == "file-summary,release-checker"

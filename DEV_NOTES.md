@@ -20,24 +20,33 @@ Use this section to record each PR in a lightweight format.
 
 ### Current
 
-- PR: 5
-- Title: Runtime Core
+- PR: 6
+- Title: Agent Application Layer
 - Branch: current working branch
 - Status: in progress
 - Summary:
-  - added async runtime package with session, state, prompt builder, hooks, and ReAct loop
-  - added runtime-facing LLM abstraction plus mock backend for deterministic tests
-  - threaded workspace and active-skill context through tool execution
-  - updated example agent wiring to use the runtime core directly
-  - added runtime fixture coverage for direct, read, and script-backed turns
+  - added reusable `RuntimeAgent` and immutable `AgentRunConfig`
+  - upgraded `EchoAgent` to compose through the shared runtime-agent layer
+  - added `FileSummaryAgent` as a more realistic workspace-facing business agent
+  - bound agent-owned skills alongside tools, with a repo-tracked `file-summary` skill
+  - added `read_skill` so the runtime can load a skill on demand before using other tools
+  - upgraded runtime state to track candidate skills, loaded skills, and the current active skill
+  - upgraded prompt building so the model sees tool descriptions, skill summaries, and explicit `read_skill` guidance
+  - added an async `AsyncOpenAI`-backed ReAct adapter for real model integration
+  - added agent fixture coverage and a runnable file-summary example
 - Tests:
-  - `./.venv/bin/pytest -q tests/unit/runtime tests/integration/test_runtime_react_loop.py tests/test_echo_agent.py`
-  - `./.venv/bin/pytest -q tests/unit/test_install_skill_example.py tests/unit/skilling tests/integration/test_skills_pipeline.py tests/integration/test_skill_install_pipeline.py tests/unit/tooling tests/integration/test_tool_execution_pipeline.py tests/unit/runtime tests/integration/test_runtime_react_loop.py tests/unit/common tests/test_echo_agent.py`
+  - `./.venv/bin/pytest -q tests/unit/llm/test_openai_react.py tests/unit/runtime tests/unit/agents tests/integration/test_demo_agent_flow.py`
+  - `./.venv/bin/pytest -q`
   - `PYTHONPATH=src ./.venv/bin/python examples/basic_run.py`
+  - `PYTHONPATH=src ./.venv/bin/python examples/file_summary_run.py`
 - Notes:
   - `tools` remain runtime-owned
   - `scripts` remain the hard boundary for `exec_script`
   - runtime now accepts `workspace_dir` directly instead of relying on test-only executor monkeypatching
+  - FastAPI stays outside `agents` and is planned separately as the future API layer
+  - agents now bind candidate skills and let the loop decide when to load one through `read_skill`
+  - a single run can now load more than one skill over time; `active_skill` follows the latest loaded skill
+  - real-model support now uses the native async OpenAI client instead of thread-wrapping a sync client
 
 ### Template
 
@@ -116,6 +125,12 @@ prepare_run()
 
 ### Runtime state mental model
 
+- `available_skills`
+  - candidate skills exposed to the run as summaries before any full skill is loaded
+- `loaded_skills`
+  - skills that have already been loaded through the loop and can be inspected later
+- `active_skill`
+  - the currently selected skill, usually the most recently loaded one
 - `scratchpad`
   - text observations fed back into the ReAct loop for later reasoning
 - `tool_results`
@@ -325,11 +340,18 @@ prepare_run()
 - Deliverables:
   - app-level agent abstraction
   - one example business agent composed from skills and tools
+  - agent-owned candidate skill binding
+  - on-demand skill loading through `read_skill`
+  - loaded-skill tracking inside runtime state
+  - prompt guidance that teaches the model when to call `read_skill`
+  - async OpenAI-compatible adapter for real ReAct execution
   - example runnable flow
 - Unit test acceptance:
   - agent wires prompt, tools, and runtime correctly
   - agent returns final answer from runtime
   - agent-specific defaults do not mutate shared runtime state
+  - runtime can load more than one skill during a single run
+  - OpenAI-compatible ReAct responses parse into runtime steps
 - Integration test need:
   - yes
 - Integration dataset:
@@ -337,6 +359,40 @@ prepare_run()
 - PR exit criteria:
   - all unit tests pass
   - example agent integration tests pass locally
+
+### PR 7 - FastAPI API Layer
+
+- Goal:
+  - add an HTTP API surface without coupling FastAPI into `agents`
+- Scope:
+  - `apps/api/main.py`
+  - `apps/api/schemas.py`
+  - `apps/api/dependencies.py`
+  - optional local dev launcher
+- Deliverables:
+  - FastAPI application bootstrap
+  - `GET /health`
+  - `GET /agents`
+  - `POST /runs`
+  - `POST /runs/debug`
+  - API response surface for:
+    - `final_answer`
+    - `scratchpad`
+    - `tool_results`
+    - `events`
+    - `trace`
+- Unit test acceptance:
+  - route schemas validate request and response payloads
+  - agent lookup and dependency wiring are deterministic
+  - debug serialization is stable
+- Integration test need:
+  - yes
+- Integration dataset:
+  - `tests/fixtures/api/run_cases.json`
+- PR exit criteria:
+  - all unit tests pass
+  - API integration tests pass locally
+  - manual owner sign-off on debug payload usability
 
 ## Testing Strategy
 

@@ -18,6 +18,10 @@ class RuntimeState:
     user_input: str
     # Fully rendered system prompt assembled before the loop starts.
     system_prompt: str = ""
+    # Skills exposed to the runtime as candidates for on-demand loading.
+    available_skills: tuple[SkillDefinition, ...] = ()
+    # Skills that have already been loaded during this run.
+    loaded_skills: list[SkillDefinition] = field(default_factory=list)
     # Skill currently selected for this run, if any.
     active_skill: SkillDefinition | None = None
     # Rolling text observations that are fed back into the ReAct loop for later reasoning.

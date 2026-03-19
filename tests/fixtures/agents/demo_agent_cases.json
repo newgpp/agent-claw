@@ -1,0 +1,14 @@
+[
+  {
+    "agent": "echo-agent",
+    "input": "hello",
+    "expected": "echo: hello"
+  },
+  {
+    "agent": "file-summary-agent",
+    "input": "summarize the note",
+    "workspace_file": "note.txt",
+    "workspace_content": "release checklist ready",
+    "expected": "Summary of note.txt: release checklist ready"
+  }
+]

@@ -16,6 +16,7 @@ class ToolExecutionContext:
 
     workspace_dir: Path = field(default_factory=lambda: Path.cwd())
     active_skill: SkillDefinition | None = None
+    available_skills: tuple[SkillDefinition, ...] = ()
 
 
 class BaseTool:

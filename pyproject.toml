@@ -13,6 +13,7 @@ authors = [
 ]
 dependencies = [
   "loguru>=0.7.2",
+  "openai>=1.30.0",
 ]
 
 [project.optional-dependencies]

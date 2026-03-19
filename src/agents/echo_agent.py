@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import asyncio
 
-from agents.base import BaseAgent
+from agents.base import AgentDescriptor
+from agents.runtime_agent import AgentRunConfig, RuntimeAgent
 from clawcore.llm.mock import MockLLM
 from clawcore.models import ReActStep, ToolCall
 from clawcore.registry import ToolRegistry
 from clawcore.runtime import ReActRuntime
+from clawcore.runtime.session import AgentSession
 from clawcore.tooling import ToolExecutor
 
 
-async def _echo_step(session) -> ReActStep:  # type: ignore[no-untyped-def]
+async def _echo_step(session: AgentSession) -> ReActStep:
     if not session.state.scratchpad:
         return ReActStep(
             thought="I should call a simple tool to transform the user's message.",
@@ -25,8 +27,13 @@ async def _echo_step(session) -> ReActStep:  # type: ignore[no-untyped-def]
     )
 
 
-class EchoAgent(BaseAgent):
+class EchoAgent(RuntimeAgent):
     """Example business agent showing how agents compose the core runtime."""
+
+    descriptor = AgentDescriptor(
+        name="echo-agent",
+        description="A tiny agent that echoes user input through the runtime tool loop.",
+    )
 
     def __init__(self) -> None:
         tools = ToolRegistry()
@@ -36,10 +43,13 @@ class EchoAgent(BaseAgent):
             return str(payload.get("text", ""))
 
         tools.register("echo", echo_handler)
-        self.runtime = ReActRuntime(
-            llm=MockLLM(_echo_step),
-            tool_executor=ToolExecutor(tools),
+        super().__init__(
+            ReActRuntime(
+                llm=MockLLM(_echo_step),
+                tool_executor=ToolExecutor(tools),
+            ),
+            config=AgentRunConfig(
+                base_instructions="Use the echo tool before answering the user.",
+                max_steps=3,
+            ),
         )
-
-    async def run(self, user_input: str) -> str:
-        return await self.runtime.run(user_input)

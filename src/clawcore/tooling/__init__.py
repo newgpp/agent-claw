@@ -3,6 +3,7 @@
 from clawcore.tooling.base import BaseTool, ToolExecutionContext
 from clawcore.tooling.builtin.exec_script import ExecScriptTool
 from clawcore.tooling.builtin.read import ReadTool
+from clawcore.tooling.builtin.read_skill import ReadSkillTool
 from clawcore.tooling.builtin.write import WriteTool
 from clawcore.tooling.executor import ToolExecutor
 from clawcore.tooling.policy import ToolPolicy
@@ -13,6 +14,7 @@ __all__ = [
     "BaseTool",
     "ExecScriptTool",
     "ReadTool",
+    "ReadSkillTool",
     "ToolExecutionContext",
     "ToolExecutionResult",
     "ToolExecutionStatus",

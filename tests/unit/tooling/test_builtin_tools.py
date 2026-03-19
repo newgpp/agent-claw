@@ -7,6 +7,7 @@ from clawcore.skilling.models import SkillDefinition
 from clawcore.tooling.base import ToolExecutionContext
 from clawcore.tooling.builtin.exec_script import ExecScriptTool
 from clawcore.tooling.builtin.read import ReadTool
+from clawcore.tooling.builtin.read_skill import ReadSkillTool
 from clawcore.tooling.builtin.write import WriteTool
 
 
@@ -34,6 +35,29 @@ def test_write_tool_writes_file_content(tmp_path: Path) -> None:
 
     assert "Wrote" in result
     assert (tmp_path / "output.txt").read_text(encoding="utf-8") == "written"
+
+
+def test_read_skill_tool_reads_declared_skill_markdown(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "demo"
+    skill_dir.mkdir(parents=True)
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.write_text("# Demo Skill\n\nUse this skill for testing.\n", encoding="utf-8")
+    skill = SkillDefinition(
+        name="demo",
+        description="Demo skill",
+        directory=skill_dir,
+        skill_file=skill_file,
+    )
+    tool = ReadSkillTool()
+
+    result = asyncio.run(
+        tool.execute(
+            {"skill": "demo"},
+            ToolExecutionContext(workspace_dir=tmp_path, available_skills=(skill,)),
+        )
+    )
+
+    assert "Use this skill for testing." in result
 
 
 def test_exec_script_tool_blocks_undeclared_scripts(tmp_path: Path) -> None:

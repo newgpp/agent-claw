@@ -40,15 +40,18 @@ class ReActRuntime:
         workspace_dir: Path | None = None,
     ) -> str:
         run_context = RunContext(user_input=user_input)
-        state = RuntimeState(user_input=user_input, active_skill=active_skill)
-        session = AgentSession(state=state)
-        tool_context = ToolExecutionContext(
-            workspace_dir=workspace_dir or Path.cwd(),
-            active_skill=state.active_skill,
+        resolved_skills = tuple(skills or [])
+        state = RuntimeState(
+            user_input=user_input,
+            available_skills=resolved_skills,
+            active_skill=active_skill,
+            loaded_skills=[active_skill] if active_skill is not None else [],
         )
+        session = AgentSession(state=state)
         state.system_prompt = self.prompt_builder.build(
-            skills=skills or [],
+            skills=list(resolved_skills),
             tool_names=self.tool_executor.registry.names(),
+            tool_descriptions=self.tool_executor.registry.descriptions(),
             base_instructions=base_instructions,
         )
         run_started = RunStarted(
@@ -96,7 +99,11 @@ class ReActRuntime:
             result = await self.tool_executor.execute(
                 step.action.name,
                 step.action.payload,
-                context=tool_context,
+                context=ToolExecutionContext(
+                    workspace_dir=workspace_dir or Path.cwd(),
+                    active_skill=state.active_skill,
+                    available_skills=resolved_skills,
+                ),
             )
             returned = ToolReturned(
                 run_id=run_context.run_id,
@@ -113,6 +120,12 @@ class ReActRuntime:
 
             tool_result = ToolResult(name=result.tool_name, content=result.content)
             state.tool_results.append(tool_result)
+            if step.action.name == "read_skill":
+                selected_skill = self._resolve_skill_from_payload(step.action.payload, resolved_skills)
+                if selected_skill is not None:
+                    state.active_skill = selected_skill
+                    if selected_skill not in state.loaded_skills:
+                        state.loaded_skills.append(selected_skill)
             observation = f"{result.tool_name}: {result.content}"
             session.append_observation(observation)
             state.trace.record("observation", observation)
@@ -124,3 +137,16 @@ class ReActRuntime:
         logger.debug("Step {} thought: {}", step_index, step.thought)
         if step.action is not None:
             state.trace.record("action", f"{step.action.name} -> {step.action.payload}")
+
+    def _resolve_skill_from_payload(
+        self,
+        payload: dict[str, object],
+        skills: tuple[SkillDefinition, ...],
+    ) -> SkillDefinition | None:
+        requested = str(payload.get("skill", "")).strip().lower()
+        if not requested:
+            return None
+        for skill in skills:
+            if skill.name.lower() == requested:
+                return skill
+        return None

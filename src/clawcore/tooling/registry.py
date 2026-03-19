@@ -38,6 +38,14 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return sorted(self._tools)
 
+    def descriptions(self) -> dict[str, str]:
+        """Return prompt-facing tool descriptions keyed by tool name."""
+        return {
+            name: tool.description.strip()
+            for name, tool in sorted(self._tools.items())
+            if tool.description.strip()
+        }
+
 
 class CallableTool(BaseTool):
     """Adapter that exposes a Python callable as a runtime tool."""
