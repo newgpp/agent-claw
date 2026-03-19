@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-claw"
+version = "0.1.0"
+description = "Python agent framework built around a ReAct core, shared runtime utilities, and app-level agents."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "ff" }
+]
+dependencies = [
+  "loguru>=0.7.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
