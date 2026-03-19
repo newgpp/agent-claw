@@ -20,18 +20,19 @@ Use this section to record each PR in a lightweight format.
 
 ### Current
 
-- PR: 1
-- Title: Common Foundation
+- PR: 2
+- Title: Skilling Layer
 - Branch: current working branch
 - Status: in progress
 - Summary:
-  - added runtime config, runtime events, and run context
-  - expanded observability to support `run_id`, `session_id`, and `trace_id`
-  - added unit tests for `common`
+  - added `clawcore.skilling` package with loader, prompt builder, and document-skill metadata support
+  - added fixture-backed unit tests for skill loading and prompt rendering
+  - added first integration test for the skills pipeline
 - Tests:
   - `./.venv/bin/pytest -q tests/unit/common tests/test_echo_agent.py`
+  - `./.venv/bin/pytest -q tests/unit/skilling tests/integration/test_skills_pipeline.py`
 - Notes:
-  - no integration dataset required for PR 1
+  - fixture datasets created under `tests/fixtures/skills`
 
 ### Template
 
@@ -54,12 +55,12 @@ Use this section to record each PR in a lightweight format.
   - config loading
   - runtime context
   - shared types and helpers
-- `clawcore`
+  - `clawcore`
   - `skilling`
     - skill loading
     - skill metadata
     - skills prompt rendering
-    - optional skill env injection
+    - document-skill metadata for tools and scripts
   - `tooling`
     - tool base protocol
     - tool registry
@@ -103,6 +104,10 @@ prepare_run()
 - Runtime owns the ReAct loop and session state.
 - Agents only define business behavior and composition.
 - Prefer deterministic behavior and testability over framework cleverness.
+- Treat skills primarily as document-skills:
+  - a skill is documentation plus constrained metadata
+  - a skill may recommend tools and allowed scripts
+  - a skill should not directly execute code by itself
 
 ## PR Roadmap
 
@@ -145,12 +150,12 @@ prepare_run()
   - `Skill` data model
   - skill directory loader
   - `skills_prompt` builder
-  - optional environment override hook for selected skills
+  - document-skill metadata for recommended tools and allowed scripts
 - Unit test acceptance:
   - load valid skills from a fixture directory
   - ignore invalid or incomplete skill entries safely
   - render `skills_prompt` with stable ordering
-  - optional env override setup and restore behave correctly
+  - parse tool and script metadata predictably
 - Integration test need:
   - yes
 - Integration dataset:
@@ -164,7 +169,7 @@ prepare_run()
 ### PR 3 - Tooling Layer
 
 - Goal:
-  - standardize tool registration, policy, and execution
+  - standardize tool registration, policy, and execution for skill-guided actions
 - Scope:
   - `clawcore/tooling/base.py`
   - `clawcore/tooling/registry.py`
@@ -177,17 +182,19 @@ prepare_run()
   - allowlist and denylist policy
   - structured `ToolCall` and `ToolResult`
   - one or two demo tools for development
+  - `exec_script` design with explicit skill-aware validation
 - Unit test acceptance:
   - registry can register and resolve tools
   - duplicate tool registration behavior is explicit
   - policy blocks denied tools
   - executor returns normalized tool results
   - tool failures are surfaced as structured errors
+  - script execution is blocked when the script is not declared by the active skill
 - Integration test need:
   - yes
 - Integration dataset:
   - `tests/fixtures/tools/cases.json`
-  - include success, blocked, invalid input, and failure cases
+  - include success, blocked, invalid input, undeclared script, and failure cases
 - PR exit criteria:
   - all unit tests pass
   - tool execution integration cases pass locally
@@ -195,7 +202,7 @@ prepare_run()
 ### PR 4 - Runtime Core
 
 - Goal:
-  - implement the first usable ReAct runtime
+  - implement the first usable ReAct runtime for document-skills + tool execution
 - Scope:
   - `clawcore/runtime/session.py`
   - `clawcore/runtime/state.py`
@@ -210,6 +217,7 @@ prepare_run()
   - minimal ReAct runner
   - abstract LLM client plus mock backend
   - runtime event emission
+  - active skill selection tracking for the current run
 - Unit test acceptance:
   - runtime builds a system prompt from skill and tool inputs
   - runtime completes a no-tool turn
@@ -217,14 +225,17 @@ prepare_run()
   - runtime stops on max step protection
   - runtime records observations into session state
   - runtime emits start, tool, observe, and finish events
+  - runtime can enforce script execution against the active skill declaration
 - Integration test need:
   - yes
 - Integration dataset:
   - `tests/fixtures/runtime/react_cases.json`
-  - cases:
+- cases:
     - direct answer
     - one tool call then final answer
     - invalid tool request
+    - declared script execution
+    - undeclared script blocked
     - max-steps exhausted
 - PR exit criteria:
   - all unit tests pass

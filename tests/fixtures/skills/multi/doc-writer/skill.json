@@ -1,0 +1,6 @@
+{
+  "name": "doc-writer",
+  "description": "Write concise and accurate documentation.",
+  "tools": ["read", "write"],
+  "tags": ["docs"]
+}

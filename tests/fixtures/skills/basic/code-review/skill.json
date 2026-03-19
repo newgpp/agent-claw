@@ -1,0 +1,7 @@
+{
+  "name": "code-review",
+  "description": "Review code for bugs, risks, and missing tests.",
+  "tools": ["read", "report"],
+  "scripts": ["scripts/review_check.py"],
+  "tags": ["quality", "review"]
+}
