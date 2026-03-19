@@ -145,7 +145,7 @@ prepare_run()
   - `clawcore/skilling/loader.py`
   - `clawcore/skilling/models.py`
   - `clawcore/skilling/prompt.py`
-  - `clawcore/skilling/env.py`
+  - skill metadata fixtures
 - Deliverables:
   - `Skill` data model
   - skill directory loader
@@ -166,7 +166,46 @@ prepare_run()
   - all unit tests pass
   - fixture-backed integration tests pass locally
 
-### PR 3 - Tooling Layer
+### PR 3 - GitHub Skill Installer
+
+- Goal:
+  - support installing document-skills directly from GitHub subdirectory URLs
+- Scope:
+  - `clawcore/skilling/install.py`
+  - `clawcore/skilling/github.py`
+  - `clawcore/skilling/manifest.py`
+  - optional example installer entrypoint
+- Deliverables:
+  - support GitHub `tree/...` skill URLs only
+  - parse:
+    - repo
+    - ref
+    - subdirectory path
+  - download the target skill directory into local `skills/<name>/`
+  - validate installed skill contents
+  - require `SKILL.md`
+  - scan `scripts/**`
+  - generate or update `skill.json`
+  - make installed skill compatible with `clawcore.skilling.load_skills()`
+- Unit test acceptance:
+  - parse valid GitHub skill URLs
+  - reject unsupported URLs
+  - reject malformed GitHub tree URLs
+  - detect `SKILL.md` correctly
+  - collect script paths correctly
+  - generate stable `skill.json`
+- Integration test need:
+  - yes
+- Integration dataset:
+  - `tests/fixtures/install/github_skill_url_cases.json`
+  - `tests/fixtures/install/github_download/xlsx_like/`
+  - initial integration can use local fixture-backed download simulation
+- PR exit criteria:
+  - all unit tests pass
+  - install integration tests pass locally
+  - installed skill can be loaded by the existing skilling loader
+
+### PR 4 - Tooling Layer
 
 - Goal:
   - standardize tool registration, policy, and execution for skill-guided actions
@@ -199,7 +238,7 @@ prepare_run()
   - all unit tests pass
   - tool execution integration cases pass locally
 
-### PR 4 - Runtime Core
+### PR 5 - Runtime Core
 
 - Goal:
   - implement the first usable ReAct runtime for document-skills + tool execution
@@ -241,7 +280,7 @@ prepare_run()
   - all unit tests pass
   - mock runtime integration cases pass locally
 
-### PR 5 - Agent Application Layer
+### PR 6 - Agent Application Layer
 
 - Goal:
   - prove that business agents can be built cleanly on top of `clawcore`
