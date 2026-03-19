@@ -20,23 +20,24 @@ Use this section to record each PR in a lightweight format.
 
 ### Current
 
-- PR: 4
-- Title: Tooling Layer
+- PR: 5
+- Title: Runtime Core
 - Branch: current working branch
 - Status: in progress
 - Summary:
-  - added runtime-owned tooling primitives and registry
-  - added built-in `read`, `write`, and `exec_script` tools
-  - added skill-aware script validation for `exec_script`
-  - added tooling integration coverage driven by fixtures
+  - added async runtime package with session, state, prompt builder, hooks, and ReAct loop
+  - added runtime-facing LLM abstraction plus mock backend for deterministic tests
+  - threaded workspace and active-skill context through tool execution
+  - updated example agent wiring to use the runtime core directly
+  - added runtime fixture coverage for direct, read, and script-backed turns
 - Tests:
-  - `./.venv/bin/pytest -q tests/unit/common tests/test_echo_agent.py`
-  - `./.venv/bin/pytest -q tests/unit/skilling tests/integration/test_skills_pipeline.py`
-  - `./.venv/bin/pytest -q tests/unit/skilling/test_github.py tests/unit/skilling/test_manifest.py tests/unit/skilling/test_install.py tests/integration/test_skill_install_pipeline.py`
-  - `./.venv/bin/pytest -q tests/unit/tooling tests/integration/test_tool_execution_pipeline.py`
+  - `./.venv/bin/pytest -q tests/unit/runtime tests/integration/test_runtime_react_loop.py tests/test_echo_agent.py`
+  - `./.venv/bin/pytest -q tests/unit/test_install_skill_example.py tests/unit/skilling tests/integration/test_skills_pipeline.py tests/integration/test_skill_install_pipeline.py tests/unit/tooling tests/integration/test_tool_execution_pipeline.py tests/unit/runtime tests/integration/test_runtime_react_loop.py tests/unit/common tests/test_echo_agent.py`
+  - `PYTHONPATH=src ./.venv/bin/python examples/basic_run.py`
 - Notes:
   - `tools` remain runtime-owned
   - `scripts` remain the hard boundary for `exec_script`
+  - runtime now accepts `workspace_dir` directly instead of relying on test-only executor monkeypatching
 
 ### Template
 
@@ -112,6 +113,17 @@ prepare_run()
   - a skill is documentation plus constrained metadata
   - a skill may recommend tools and allowed scripts
   - a skill should not directly execute code by itself
+
+### Runtime state mental model
+
+- `scratchpad`
+  - text observations fed back into the ReAct loop for later reasoning
+- `tool_results`
+  - structured tool outputs kept for programmatic access and assertions
+- `events`
+  - runtime lifecycle events used for hooks, tracing, and debugging
+- `trace`
+  - ordered timeline of the run across thought, action, observation, and final answer
 
 ## PR Roadmap
 

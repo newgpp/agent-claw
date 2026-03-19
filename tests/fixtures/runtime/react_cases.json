@@ -1,0 +1,11 @@
+[
+  {
+    "mode": "direct"
+  },
+  {
+    "mode": "read_once"
+  },
+  {
+    "mode": "exec_script"
+  }
+]
