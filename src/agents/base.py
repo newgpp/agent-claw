@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
+from clawcore.runtime import RuntimeRunResult
+
 
 @dataclass(frozen=True, slots=True)
 class AgentDescriptor:
@@ -33,3 +35,9 @@ class BaseAgent(ABC):
     @abstractmethod
     async def run(self, user_input: str, *, workspace_dir: Path | None = None) -> str:
         """Run the agent for a single user input."""
+
+    async def run_debug(
+        self, user_input: str, *, workspace_dir: Path | None = None
+    ) -> RuntimeRunResult:
+        """Run the agent and return the final answer plus debug state."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not implement run_debug().")

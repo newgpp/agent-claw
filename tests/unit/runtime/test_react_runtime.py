@@ -45,6 +45,27 @@ def test_runtime_completes_single_tool_turn(tmp_path: Path) -> None:
     assert result == "read: runtime text"
 
 
+def test_runtime_run_debug_returns_final_answer_and_state(tmp_path: Path) -> None:
+    async def step_fn(session: AgentSession) -> ReActStep:
+        if not session.state.scratchpad:
+            return ReActStep(
+                thought="read file",
+                action=ToolCall(name="read", payload={"path": "note.txt"}),
+            )
+        return ReActStep(thought="done", final_answer=session.state.scratchpad[-1])
+
+    (tmp_path / "note.txt").write_text("runtime text", encoding="utf-8")
+
+    runtime = ReActRuntime(llm=MockLLM(step_fn), tool_executor=build_tool_executor())
+    result = asyncio.run(runtime.run_debug("read it", workspace_dir=tmp_path))
+
+    assert result.final_answer == "read: runtime text"
+    assert result.state.scratchpad == ["read: runtime text"]
+    assert result.state.tool_results[0].name == "read"
+    assert result.state.events[-1].event_type == "run.finished"
+    assert result.state.trace.events[-1].kind == "final_answer"
+
+
 def test_runtime_stops_on_max_steps() -> None:
     llm = MockLLM(lambda session: ReActStep(thought="loop", action=ToolCall(name="read", payload={})))
     runtime = ReActRuntime(llm=llm, tool_executor=build_tool_executor())

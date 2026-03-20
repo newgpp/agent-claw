@@ -7,6 +7,7 @@ from pathlib import Path
 
 from clawcore.llm.base import BaseLLM
 from clawcore.models import ReActStep, ToolResult
+from clawcore.runtime.result import RuntimeRunResult
 from clawcore.skilling.models import SkillDefinition
 from clawcore.tooling.base import ToolExecutionContext
 from clawcore.tooling.executor import ToolExecutor
@@ -39,6 +40,26 @@ class ReActRuntime:
         base_instructions: str = "",
         workspace_dir: Path | None = None,
     ) -> str:
+        result = await self.run_debug(
+            user_input,
+            skills=skills,
+            active_skill=active_skill,
+            max_steps=max_steps,
+            base_instructions=base_instructions,
+            workspace_dir=workspace_dir,
+        )
+        return result.final_answer
+
+    async def run_debug(
+        self,
+        user_input: str,
+        *,
+        skills: list[SkillDefinition] | None = None,
+        active_skill: SkillDefinition | None = None,
+        max_steps: int = 5,
+        base_instructions: str = "",
+        workspace_dir: Path | None = None,
+    ) -> RuntimeRunResult:
         run_context = RunContext(user_input=user_input)
         resolved_skills = tuple(skills or [])
         state = RuntimeState(
@@ -81,7 +102,7 @@ class ReActRuntime:
                 state.events.append(finished)
                 state.trace.record("final_answer", step.final_answer)
                 logger.info("Finished ReAct loop in {} step(s)", step_index)
-                return step.final_answer
+                return RuntimeRunResult(final_answer=step.final_answer, state=state)
 
             if step.action is None:
                 raise RuntimeError("Planner returned neither an action nor a final answer.")

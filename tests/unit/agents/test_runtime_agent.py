@@ -14,6 +14,10 @@ class StubRuntime:
         self.calls.append({"user_input": user_input, **kwargs})
         return self.result
 
+    async def run_debug(self, user_input: str, **kwargs) -> str:  # type: ignore[no-untyped-def]
+        self.calls.append({"user_input": user_input, **kwargs})
+        return self.result
+
 
 class DemoRuntimeAgent(RuntimeAgent):
     descriptor = AgentDescriptor(name="demo-agent", description="Demo runtime agent.")
@@ -76,3 +80,14 @@ def test_runtime_agent_exposes_descriptor() -> None:
 
     assert agent.name == "demo-agent"
     assert agent.description == "Demo runtime agent."
+
+
+def test_runtime_agent_forwards_debug_runs(tmp_path: Path) -> None:
+    runtime = StubRuntime(result="done")
+    agent = DemoRuntimeAgent(runtime, config=AgentRunConfig(workspace_dir=tmp_path))  # type: ignore[arg-type]
+
+    import asyncio
+
+    asyncio.run(agent.run_debug("hello"))
+
+    assert runtime.calls[0]["workspace_dir"] == tmp_path
