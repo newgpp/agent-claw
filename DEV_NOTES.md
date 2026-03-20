@@ -26,19 +26,16 @@ Use this section to record each PR in a lightweight format.
 - Status: in progress
 - Summary:
   - added reusable `RuntimeAgent` and immutable `AgentRunConfig`
-  - upgraded `EchoAgent` to compose through the shared runtime-agent layer
-  - added `FileSummaryAgent` as a more realistic workspace-facing business agent
   - bound agent-owned skills alongside tools, with a repo-tracked `file-summary` skill
   - added `read_skill` so the runtime can load a skill on demand before using other tools
   - upgraded runtime state to track candidate skills, loaded skills, and the current active skill
   - upgraded prompt building so the model sees tool descriptions, skill summaries, and explicit `read_skill` guidance
   - added an async `AsyncOpenAI`-backed ReAct adapter for real model integration
-  - added agent fixture coverage and a runnable file-summary example
+  - added runtime-backed agent coverage and a runnable OpenAI runtime example
 - Tests:
-  - `./.venv/bin/pytest -q tests/unit/llm/test_openai_react.py tests/unit/runtime tests/unit/agents tests/integration/test_demo_agent_flow.py`
+  - `./.venv/bin/pytest -q tests/unit/llm/test_openai_react.py tests/unit/runtime tests/unit/agents tests/integration/test_weather_skill_flow.py`
   - `./.venv/bin/pytest -q`
-  - `PYTHONPATH=src ./.venv/bin/python examples/basic_run.py`
-  - `PYTHONPATH=src ./.venv/bin/python examples/file_summary_run.py`
+  - `PYTHONPATH=src ./.venv/bin/python examples/openai_runtime.py`
 - Notes:
   - `tools` remain runtime-owned
   - `scripts` remain the hard boundary for `exec_script`

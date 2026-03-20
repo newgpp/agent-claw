@@ -32,7 +32,7 @@ agent-claw/
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .[dev]
-python3 examples/basic_run.py
+python3 examples/openai_runtime.py
 pytest
 ```
 
@@ -44,7 +44,7 @@ URLs.
 Example:
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python examples/install_skill.py \
+python examples/install_skill.py \
   "https://github.com/anthropics/skills/tree/main/skills/xlsx" \
   --skills-root skills
 ```
@@ -52,8 +52,15 @@ PYTHONPATH=src ./.venv/bin/python examples/install_skill.py \
 If you use a local proxy, pass it explicitly:
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python examples/install_skill.py \
+python examples/install_skill.py \
   "https://github.com/anthropics/skills/tree/main/skills/xlsx" \
+  --skills-root skills \
+  --proxy http://127.0.0.1:7890
+```
+
+```bash
+python examples/install_skill.py \
+  "https://github.com/openclaw/openclaw/tree/main/skills/weather" \
   --skills-root skills \
   --proxy http://127.0.0.1:7890
 ```
