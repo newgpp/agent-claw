@@ -1,0 +1,10 @@
+{
+  "type": "openai-runtime",
+  "model": "deepseek-chat",
+  "tools": ["echo_payload"],
+  "skills": [],
+  "base_instructions": "Use the echo_payload tool before answering the user.",
+  "max_steps": 3,
+  "include_read_skill": false,
+  "temperature": 0.0
+}

@@ -357,6 +357,33 @@ prepare_run()
   - all unit tests pass
   - example agent integration tests pass locally
 
+### PR 6.5 - Agent Factory and Config Wiring
+
+- Goal:
+  - add a stable app-level factory that builds singleton agents from JSON config
+- Scope:
+  - `agents/factory.py`
+  - JSON-backed agent spec loading and validation
+  - factory unit tests
+  - optional example wiring cleanup
+- Deliverables:
+  - JSON-backed `OpenAIRuntimeAgentSpec`
+  - deterministic agent construction from config
+  - singleton caching by config path
+  - explicit cache clearing for future reload flows
+  - relative path resolution for `skills_dir` and `workspace_dir`
+- Unit test acceptance:
+  - valid JSON config builds the expected agent
+  - invalid config fails with clear errors
+  - repeated factory calls return the same agent instance
+  - different config paths produce different agent instances
+  - built-in tool resolution is deterministic
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - factory is usable by future FastAPI dependency wiring without extra boot logic
+
 ### PR 7 - FastAPI API Layer
 
 - Goal:

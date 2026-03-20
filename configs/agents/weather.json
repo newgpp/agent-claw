@@ -1,0 +1,10 @@
+{
+  "type": "openai-runtime",
+  "model": "deepseek-chat",
+  "tools": [],
+  "skills": ["weather"],
+  "base_instructions": "Use the weather skill when the user asks about current weather or a forecast. Load the skill before answering when its detailed instructions are needed.",
+  "max_steps": 4,
+  "include_read_skill": true,
+  "temperature": 0.0
+}
