@@ -17,10 +17,13 @@ planning and execution loop.
 ```text
 agent-claw/
 ├── DEV_NOTES.md
+├── configs/
 ├── examples/
 ├── pyproject.toml
+├── skills/
 ├── src/
 │   ├── agents/
+│   ├── apps/
 │   ├── clawcore/
 │   └── common/
 └── tests/
@@ -45,12 +48,47 @@ override:
 - `AGENT_CLAW_API_HOST`
 - `AGENT_CLAW_API_PORT`
 
+## Agent Configs
+
+Runtime agents are configured from JSON files in `configs/agents/`.
+
+- `configs/agents/openai_runtime.json`
+  - minimal OpenAI-compatible runtime agent example
+- `configs/agents/weather.json`
+  - weather-focused agent that enables the `weather` skill and the agent-level `curl` tool
+
+Each config currently controls:
+
+- `type`
+- `model`
+- `tools`
+- `skills`
+- `base_instructions`
+- `max_steps`
+- `include_read_skill`
+- `temperature`
+
+Built-in tools are loaded by default. The `tools` field is for agent-level tools
+defined under `src/agents/tools/`.
+
 ## Running
 
 Run the example OpenAI-backed agent:
 
 ```bash
 python3 examples/openai_runtime.py
+```
+
+Run a weather-focused agent through the API after installing the weather skill:
+
+```bash
+python examples/install_skill.py \
+  "https://github.com/openclaw/openclaw/tree/main/skills/weather" \
+  --skills-root skills
+python3 -m apps.api.run
+curl -X POST http://127.0.0.1:8000/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"weather","user_input":"香港的天气怎么样？"}'
 ```
 
 Run the FastAPI API locally:
@@ -65,6 +103,25 @@ The API exposes:
 - `GET /agents`
 - `POST /runs`
 - `POST /runs/debug`
+
+`POST /runs/debug` returns the final answer plus runtime debug state:
+
+- `scratchpad`
+- `tool_results`
+- `events`
+- `trace`
+
+## Logging and Trace IDs
+
+The API configures a shared Loguru formatter on startup. Console logs show a
+single `trace_id` so one HTTP request can be followed across:
+
+- API request logging
+- LLM request and response logging
+- runtime completion logging
+
+The request trace is bound once at the API middleware layer and reused by the
+runtime for downstream logs.
 
 ## Install Skills
 

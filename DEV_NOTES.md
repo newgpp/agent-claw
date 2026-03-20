@@ -20,30 +20,26 @@ Use this section to record each PR in a lightweight format.
 
 ### Current
 
-- PR: 6
-- Title: Agent Application Layer
-- Branch: current working branch
-- Status: in progress
+- PR: 7
+- Title: FastAPI API Layer
+- Branch: main
+- Status: landed
 - Summary:
-  - added reusable `RuntimeAgent` and immutable `AgentRunConfig`
-  - bound agent-owned skills alongside tools, with a repo-tracked `file-summary` skill
-  - added `read_skill` so the runtime can load a skill on demand before using other tools
-  - upgraded runtime state to track candidate skills, loaded skills, and the current active skill
-  - upgraded prompt building so the model sees tool descriptions, skill summaries, and explicit `read_skill` guidance
-  - added an async `AsyncOpenAI`-backed ReAct adapter for real model integration
-  - added runtime-backed agent coverage and a runnable OpenAI runtime example
+  - landed JSON-backed agent factory wiring for singleton agent construction
+  - added `configs/agents/*.json` for app-level runtime configuration
+  - added `src/apps/api/` with `GET /health`, `GET /agents`, `POST /runs`, and `POST /runs/debug`
+  - added `.env` loading and a local API run entrypoint
+  - added request-scoped trace logging across the API, runtime, and LLM adapter
+  - added a generic agent-level `curl` tool and a weather-focused config flow
+  - added runtime safeguards for repeated identical tool calls
 - Tests:
-  - `./.venv/bin/pytest -q tests/unit/llm/test_openai_react.py tests/unit/runtime tests/unit/agents tests/integration/test_weather_skill_flow.py`
-  - `./.venv/bin/pytest -q`
-  - `PYTHONPATH=src ./.venv/bin/python examples/openai_runtime.py`
+  - `./.venv/bin/pytest tests/unit/common/test_observability.py tests/unit/runtime/test_react_runtime.py tests/integration/test_api_runs.py tests/unit/api/test_env.py tests/unit/api/test_dependencies.py tests/unit/api/test_schemas.py`
+  - `./.venv/bin/pytest tests/unit/llm/test_openai_react.py tests/integration/test_weather_skill_flow.py`
 - Notes:
-  - `tools` remain runtime-owned
-  - `scripts` remain the hard boundary for `exec_script`
-  - runtime now accepts `workspace_dir` directly instead of relying on test-only executor monkeypatching
-  - FastAPI stays outside `agents` and is planned separately as the future API layer
-  - agents now bind candidate skills and let the loop decide when to load one through `read_skill`
-  - a single run can now load more than one skill over time; `active_skill` follows the latest loaded skill
-  - real-model support now uses the native async OpenAI client instead of thread-wrapping a sync client
+  - built-in tools are loaded by default; config `tools` are reserved for agent-level tools under `src/agents/tools/`
+  - the factory now assumes a repo-level `skills/` directory and a config-level `skills` allowlist
+  - request `trace_id` is created once in FastAPI middleware and reused by `RunContext`
+  - logs now print only `trace_id`; `run_id` and `session_id` remain internal runtime identifiers
 
 ### Template
 
@@ -371,13 +367,17 @@ prepare_run()
   - deterministic agent construction from config
   - singleton caching by config path
   - explicit cache clearing for future reload flows
-  - relative path resolution for `skills_dir` and `workspace_dir`
+  - built-in tools loaded by default
+  - agent-level tool auto-discovery from `src/agents/tools/`
+  - fixed repo-level `skills/` lookup plus config-level `skills` allowlist
+  - default workspace resolution to `works/{agent_id}`
 - Unit test acceptance:
   - valid JSON config builds the expected agent
   - invalid config fails with clear errors
   - repeated factory calls return the same agent instance
   - different config paths produce different agent instances
   - built-in tool resolution is deterministic
+  - agent-level tool discovery is deterministic
 - Integration test need:
   - not required
 - PR exit criteria:
@@ -395,16 +395,19 @@ prepare_run()
   - optional local dev launcher
 - Deliverables:
   - FastAPI application bootstrap
+  - request-scoped trace-id binding for API logs
   - `GET /health`
   - `GET /agents`
   - `POST /runs`
   - `POST /runs/debug`
+  - `.env`-backed local API launcher
   - API response surface for:
     - `final_answer`
     - `scratchpad`
     - `tool_results`
     - `events`
     - `trace`
+  - debug and observability logging for API inputs plus LLM request/response cycles
 - Unit test acceptance:
   - route schemas validate request and response payloads
   - agent lookup and dependency wiring are deterministic
@@ -417,6 +420,7 @@ prepare_run()
   - all unit tests pass
   - API integration tests pass locally
   - manual owner sign-off on debug payload usability
+  - request logs and runtime logs share the same trace id
 
 ## Testing Strategy
 
