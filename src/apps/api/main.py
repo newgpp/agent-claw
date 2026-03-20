@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException
 
 from agents.base import BaseAgent
+from apps.env import load_dotenv
 from apps.api.dependencies import AgentCatalogEntry, get_agent_by_id, get_agent_catalog
 from apps.api.schemas import (
     AgentSummaryResponse,
@@ -18,6 +19,7 @@ from apps.api.schemas import (
 
 
 def create_app() -> FastAPI:
+    load_dotenv()
     app = FastAPI(title="agent-claw API")
 
     @app.get("/health", response_model=HealthResponse)

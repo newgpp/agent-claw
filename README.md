@@ -32,9 +32,39 @@ agent-claw/
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .[dev]
+cp .env.example .env
 python3 examples/openai_runtime.py
 pytest
 ```
+
+Set `OPENAI_API_KEY` in `.env` before running OpenAI-backed agents. You can also
+override:
+
+- `OPENAI_BASE_URL`
+- `AGENT_CLAW_AGENTS_DIR`
+- `AGENT_CLAW_API_HOST`
+- `AGENT_CLAW_API_PORT`
+
+## Running
+
+Run the example OpenAI-backed agent:
+
+```bash
+python3 examples/openai_runtime.py
+```
+
+Run the FastAPI API locally:
+
+```bash
+python3 -m apps.api.run
+```
+
+The API exposes:
+
+- `GET /health`
+- `GET /agents`
+- `POST /runs`
+- `POST /runs/debug`
 
 ## Install Skills
 
