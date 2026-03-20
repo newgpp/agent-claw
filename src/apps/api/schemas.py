@@ -31,7 +31,6 @@ class AgentSummaryResponse(BaseModel):
 class RunRequest(BaseModel):
     agent_id: str = Field(min_length=1)
     user_input: str = Field(min_length=1)
-    workspace_dir: str | None = None
 
 
 class RunResponse(BaseModel):

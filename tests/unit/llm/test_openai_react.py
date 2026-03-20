@@ -7,6 +7,7 @@ from clawcore.llm import OpenAIReActConfig, OpenAIReActLLM
 from clawcore.runtime.session import AgentSession
 from clawcore.runtime.state import RuntimeState
 from clawcore.skilling.models import SkillDefinition
+from common.observability import bind_trace_id, reset_trace_id
 
 
 class FakeMessage:
@@ -58,7 +59,7 @@ def build_session() -> AgentSession:
             "- Call `read_skill` only when a skill summary looks relevant and you need the full instructions.\n"
             "Available tools:\n"
             "- read: Read file contents from the workspace.\n"
-            "- read_skill: Load the full markdown content for one available skill."
+            "- read_skill: Load the full markdown content for one available skill. Payload: {skill:string}."
         ),
         available_skills=(skill,),
         loaded_skills=[skill],
@@ -87,7 +88,10 @@ def test_openai_react_llm_parses_action_response() -> None:
     assert request["model"] == "deepseek-chat"
     assert request["messages"][0]["role"] == "system"
     assert "Call `read_skill` only when a skill summary looks relevant" in request["messages"][0]["content"]
-    assert "- read_skill: Load the full markdown content for one available skill." in request["messages"][0]["content"]
+    assert (
+        "- read_skill: Load the full markdown content for one available skill. Payload: {skill:string}."
+        in request["messages"][0]["content"]
+    )
     assert "If a skill seems relevant but you need its full procedure" in request["messages"][0]["content"]
     assert "Loaded skills: file-summary" in request["messages"][1]["content"]
 
@@ -114,3 +118,33 @@ def test_openai_react_llm_rejects_invalid_json() -> None:
 
     with pytest.raises(RuntimeError, match="valid JSON"):
         asyncio.run(llm.next_step(build_session()))
+
+
+def test_openai_react_llm_logs_request_and_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = FakeOpenAIClient('{"thought":"I can answer now.","action":null,"final_answer":"done"}')
+    llm = OpenAIReActLLM(
+        OpenAIReActConfig(model="deepseek-chat", api_key="test-key"),
+        client=client,  # type: ignore[arg-type]
+    )
+    records: list[tuple[str, tuple[object, ...]]] = []
+
+    def fake_info(message: str, *args: object) -> None:
+        records.append((message, args))
+
+    monkeypatch.setattr("clawcore.llm.openai_react.logger.info", fake_info)
+    trace_token = bind_trace_id("trace-llm")
+
+    try:
+        step = asyncio.run(llm.next_step(build_session()))
+    finally:
+        reset_trace_id(trace_token)
+
+    assert step.final_answer == "done"
+    assert len(records) == 2
+    assert records[0][0] == "LLM request model={} payload={}"
+    assert records[0][1][0] == "deepseek-chat"
+    assert "Summarize note.txt" in str(records[0][1][1])
+    assert records[1] == (
+        "LLM response model={} content={}",
+        ("deepseek-chat", '{"thought":"I can answer now.","action":null,"final_answer":"done"}'),
+    )

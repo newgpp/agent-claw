@@ -20,11 +20,14 @@ class ReadSkillTool(BaseTool):
     """Read the full document for an available skill."""
 
     name = "read_skill"
-    description = "Load the full markdown content for one available skill."
+    description = (
+        "Load the full markdown content for one available skill. "
+        "Payload: {skill:string}."
+    )
     risk_level = "low"
 
     async def execute(self, payload: dict[str, object], context: ToolExecutionContext) -> str:
-        raw_skill = str(payload.get("skill", "")).strip()
+        raw_skill = str(payload.get("skill", payload.get("skill_name", ""))).strip()
         if not raw_skill:
             raise ValueError("read_skill requires a non-empty 'skill'.")
 

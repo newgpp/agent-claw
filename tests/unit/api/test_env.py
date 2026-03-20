@@ -14,6 +14,7 @@ def test_load_dotenv_sets_missing_values_without_overwriting(tmp_path: Path, mon
         encoding="utf-8",
     )
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("AGENT_CLAW_API_PORT", raising=False)
     monkeypatch.setenv("AGENT_CLAW_API_HOST", "127.0.0.1")
 
     loaded = load_dotenv(env_path)

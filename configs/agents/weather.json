@@ -1,10 +1,10 @@
 {
   "type": "openai-runtime",
   "model": "deepseek-chat",
-  "tools": [],
+  "tools": ["curl"],
   "skills": ["weather"],
-  "base_instructions": "Use the weather skill when the user asks about current weather or a forecast. Load the skill before answering when its detailed instructions are needed.",
-  "max_steps": 4,
+  "base_instructions": "Use the weather skill when the user asks about current weather or a forecast. Prefer calling curl with a wttr.in URL for the user's location. Load the skill first when its detailed instructions are needed. Once a weather response is available, answer the user directly instead of making another formatting-only curl request.",
+  "max_steps": 5,
   "include_read_skill": true,
   "temperature": 0.0
 }

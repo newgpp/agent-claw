@@ -7,6 +7,7 @@ import os
 import uvicorn
 
 from apps.env import load_dotenv
+from common.observability import setup_loguru
 
 
 def resolve_api_bind() -> tuple[str, int]:
@@ -24,6 +25,7 @@ def resolve_api_bind() -> tuple[str, int]:
 def main() -> None:
     """Run the API server using .env-backed host and port values."""
     host, port = resolve_api_bind()
+    setup_loguru(service_name="agent-claw-api")
     uvicorn.run("apps.api.main:app", host=host, port=port, reload=True)
 
 

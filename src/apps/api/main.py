@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from collections.abc import Awaitable, Callable
 
 from fastapi import Depends, FastAPI, HTTPException
+from starlette.requests import Request
+from starlette.responses import Response
 
 from agents.base import BaseAgent
 from apps.env import load_dotenv
@@ -16,11 +18,24 @@ from apps.api.schemas import (
     RunRequest,
     RunResponse,
 )
+from common.observability import bind_trace_id, logger, reset_trace_id, setup_loguru
 
 
 def create_app() -> FastAPI:
     load_dotenv()
+    setup_loguru(service_name="agent-claw-api")
     app = FastAPI(title="agent-claw API")
+
+    @app.middleware("http")
+    async def bind_request_trace_id(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        trace_token = bind_trace_id()
+        try:
+            return await call_next(request)
+        finally:
+            reset_trace_id(trace_token)
 
     @app.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
@@ -37,11 +52,13 @@ def create_app() -> FastAPI:
         payload: RunRequest,
         agent: BaseAgent = Depends(_resolve_agent_for_run),
     ) -> RunResponse:
+        logger.info(
+            "API request path=/runs agent_id={} user_input={}",
+            payload.agent_id,
+            payload.user_input,
+        )
         try:
-            final_answer = await agent.run(
-                payload.user_input,
-                workspace_dir=Path(payload.workspace_dir) if payload.workspace_dir else None,
-            )
+            final_answer = await agent.run(payload.user_input)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except NotImplementedError as exc:
@@ -55,11 +72,13 @@ def create_app() -> FastAPI:
         payload: RunRequest,
         agent: BaseAgent = Depends(_resolve_agent_for_run),
     ) -> DebugRunResponse:
+        logger.info(
+            "API request path=/runs/debug agent_id={} user_input={}",
+            payload.agent_id,
+            payload.user_input,
+        )
         try:
-            result = await agent.run_debug(
-                payload.user_input,
-                workspace_dir=Path(payload.workspace_dir) if payload.workspace_dir else None,
-            )
+            result = await agent.run_debug(payload.user_input)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except NotImplementedError as exc:
