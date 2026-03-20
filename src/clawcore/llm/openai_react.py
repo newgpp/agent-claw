@@ -78,22 +78,22 @@ class OpenAIReActLLM(BaseLLM):
 
     def _build_messages(self, session: AgentSession) -> list[dict[str, str]]:
         state = session.state
-        user_lines = [
-            f"User input:\n{state.user_input}",
-            f"Active skill: {state.active_skill.name if state.active_skill is not None else 'none'}",
-            "Loaded skills: "
-            + (", ".join(skill.name for skill in state.loaded_skills) if state.loaded_skills else "none"),
-        ]
-        if state.scratchpad:
-            user_lines.append("Scratchpad observations:")
-            user_lines.extend(f"- {entry}" for entry in state.scratchpad)
+        user_context: dict[str, object] = {
+            "user_input": state.user_input,
+            "active_skill": state.active_skill.name if state.active_skill is not None else None,
+            "loaded_skills": [skill.name for skill in state.loaded_skills],
+            "scratchpad_observations": list(state.scratchpad),
+        }
 
         return [
             {
                 "role": "system",
                 "content": "\n\n".join(part for part in [state.system_prompt, _PROTOCOL_INSTRUCTIONS] if part),
             },
-            {"role": "user", "content": "\n".join(user_lines)},
+            {
+                "role": "user",
+                "content": "Runtime context:\n" + self._dump_json_for_log(user_context),
+            },
         ]
 
     def _extract_content(self, response: Any) -> str:

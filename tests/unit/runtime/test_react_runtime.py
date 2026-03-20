@@ -182,6 +182,55 @@ def test_runtime_promotes_active_skill_after_read_skill(tmp_path: Path) -> None:
     assert result == "file-summary"
 
 
+def test_runtime_summarizes_read_skill_observation(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "weather"
+    skill_dir.mkdir(parents=True)
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.write_text(
+        "---\n"
+        'name: weather\n'
+        'description: "Get current weather and forecasts for a location."\n'
+        "---\n\n"
+        "# Weather Skill\n\n"
+        "Use this skill when the user asks about current weather or a forecast for a city.\n\n"
+        "Always include a location in the weather query.\n\n"
+        "```bash\n"
+        'curl "wttr.in/Hong+Kong?format=3"\n'
+        "```\n",
+        encoding="utf-8",
+    )
+    skill = SkillDefinition(
+        name="weather",
+        description="Get current weather and forecasts for a location.",
+        directory=skill_dir,
+        skill_file=skill_file,
+    )
+    registry = ToolRegistry()
+    from clawcore.tooling import ReadSkillTool
+
+    registry.register(ReadSkillTool())
+    executor = ToolExecutor(registry, policy=ToolPolicy())
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        if not session.state.scratchpad:
+            return ReActStep(
+                thought="Load the weather skill first.",
+                action=ToolCall(name="read_skill", payload={"skill": "weather"}),
+            )
+        return ReActStep(thought="done", final_answer=session.state.scratchpad[-1])
+
+    runtime = ReActRuntime(llm=MockLLM(step_fn), tool_executor=executor)
+
+    result = asyncio.run(runtime.run("weather", skills=[skill], workspace_dir=tmp_path))
+
+    assert "read_skill_summary:" in result
+    assert '"skill_name": "weather"' in result
+    assert '"summary": ["Get current weather and forecasts for a location."' in result
+    assert '"call_hint": "curl \\"wttr.in/Hong+Kong?format=3\\""' in result
+    assert "# Weather Skill" not in result
+    assert "Always include a location in the weather query." in result
+
+
 def test_runtime_promotes_active_skill_after_read_skill_name_alias(tmp_path: Path) -> None:
     skill_dir = tmp_path / "skills" / "file-summary"
     skill_dir.mkdir(parents=True)

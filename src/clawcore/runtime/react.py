@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -184,7 +185,12 @@ class ReActRuntime:
                         state.active_skill = selected_skill
                         if selected_skill not in state.loaded_skills:
                             state.loaded_skills.append(selected_skill)
-                observation = f"{result_tool_name}: {result_content}"
+                observation = self._build_observation(
+                    tool_name=result_tool_name,
+                    result_content=result_content,
+                    action_payload=step.action.payload,
+                    skills=resolved_skills,
+                )
                 session.append_observation(observation)
                 state.trace.record("observation", observation)
         finally:
@@ -215,3 +221,69 @@ class ReActRuntime:
 
     def _action_signature(self, tool_name: str, payload: dict[str, object]) -> str:
         return f"{tool_name}:{json.dumps(payload, ensure_ascii=False, sort_keys=True)}"
+
+    def _build_observation(
+        self,
+        *,
+        tool_name: str,
+        result_content: str,
+        action_payload: dict[str, object],
+        skills: tuple[SkillDefinition, ...],
+    ) -> str:
+        if tool_name != "read_skill":
+            return f"{tool_name}: {result_content}"
+
+        selected_skill = self._resolve_skill_from_payload(action_payload, skills)
+        payload = {
+            "skill_name": selected_skill.name if selected_skill is not None else str(
+                action_payload.get("skill", action_payload.get("skill_name", ""))
+            ).strip(),
+            "summary": self._summarize_skill_content(result_content, selected_skill),
+            "call_hint": self._extract_skill_call_hint(result_content),
+            "full_doc_available": True,
+        }
+        return "read_skill_summary: " + json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    def _summarize_skill_content(
+        self,
+        content: str,
+        skill: SkillDefinition | None,
+        *,
+        limit: int = 3,
+    ) -> list[str]:
+        summaries: list[str] = []
+        if skill is not None and skill.description.strip():
+            summaries.append(skill.description.strip())
+
+        for line in content.splitlines():
+            cleaned = line.strip()
+            if not cleaned:
+                continue
+            if cleaned.startswith(("---", "#", "```", "- ", "* ")):
+                continue
+            if ":" in cleaned and len(cleaned.split()) <= 4:
+                continue
+            if cleaned.startswith(("name:", "description:", "homepage:", "metadata:")):
+                continue
+            if cleaned in summaries:
+                continue
+            summaries.append(cleaned)
+            if len(summaries) >= limit:
+                break
+
+        return summaries[:limit]
+
+    def _extract_skill_call_hint(self, content: str) -> str | None:
+        for line in content.splitlines():
+            cleaned = line.strip()
+            if not cleaned:
+                continue
+            if cleaned.startswith(("curl ", "curl\"", "curl \"", "curl '")):
+                return cleaned
+            if "wttr.in/" in cleaned or "https://" in cleaned:
+                return cleaned
+
+        match = re.search(r"`([^`]*(?:curl|https?://|wttr\.in/)[^`]*)`", content)
+        if match is not None:
+            return match.group(1).strip()
+        return None

@@ -93,7 +93,9 @@ def test_openai_react_llm_parses_action_response() -> None:
         in request["messages"][0]["content"]
     )
     assert "If a skill seems relevant but you need its full procedure" in request["messages"][0]["content"]
-    assert "Loaded skills: file-summary" in request["messages"][1]["content"]
+    assert '"active_skill": "file-summary"' in request["messages"][1]["content"]
+    assert '"loaded_skills": ["file-summary"]' in request["messages"][1]["content"]
+    assert '"scratchpad_observations": ["read: note contents"]' in request["messages"][1]["content"]
 
 
 def test_openai_react_llm_parses_final_answer_response() -> None:
