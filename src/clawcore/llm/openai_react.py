@@ -11,6 +11,7 @@ from openai import AsyncOpenAI
 from clawcore.llm.base import BaseLLM
 from clawcore.models import ReActStep, ToolCall
 from clawcore.runtime.session import AgentSession
+from common.observability import logger
 
 _PROTOCOL_INSTRUCTIONS = """
 You are the planner for a ReAct agent runtime.
@@ -25,6 +26,8 @@ Rules:
 - If you need a tool, set "action" and set "final_answer" to null.
 - If you can answer the user, set "final_answer" and set "action" to null.
 - Never leave both "action" and "final_answer" null.
+- If an existing scratchpad observation already answers the user, return `final_answer` instead of calling another tool.
+- Do not repeat the same tool call with the same payload unless the prior result failed or the user explicitly asked for more detail.
 - Prefer using the available skill summaries first.
 - If a skill seems relevant but you need its full procedure, call `read_skill` before downstream tools.
 - Do not call `read_skill` when the current context is already sufficient to answer.
@@ -52,8 +55,15 @@ class OpenAIReActLLM(BaseLLM):
 
     async def next_step(self, session: AgentSession) -> ReActStep:
         messages = self._build_messages(session)
+        logger.info(
+            "LLM request model={} payload={}",
+            self.config.model,
+            self._dump_json_for_log({"messages": messages}),
+        )
         response = await self._create_completion(messages)
-        return self._parse_step(self._extract_content(response))
+        content = self._extract_content(response)
+        logger.info("LLM response model={} content={}", self.config.model, content)
+        return self._parse_step(content)
 
     async def _create_completion(self, messages: list[dict[str, str]]) -> Any:
         request: dict[str, object] = {
@@ -134,3 +144,7 @@ class OpenAIReActLLM(BaseLLM):
             raise RuntimeError("OpenAI response must provide exactly one of 'action' or 'final_answer'.")
 
         return ReActStep(thought=thought, action=action, final_answer=final_answer)
+
+    def _dump_json_for_log(self, payload: dict[str, object]) -> str:
+        """Render log payloads consistently without escaping Unicode input."""
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True)

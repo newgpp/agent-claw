@@ -21,7 +21,7 @@ def test_load_agent_spec_reads_valid_json_fixture() -> None:
         skills=("weather",),
         base_instructions="Use the available tools carefully.",
         max_steps=4,
-        workspace_dir="../runtime/workspace",
+        workspace_dir=None,
         include_read_skill=True,
         base_url="http://localhost:1234/v1",
         temperature=0.2,
@@ -38,7 +38,7 @@ def test_build_agent_resolves_relative_paths_from_config_file(monkeypatch: pytes
     agent = build_agent(spec, config_path=config_path)
 
     assert [skill.name for skill in agent.config.skills] == ["weather"]
-    assert agent.config.workspace_dir == Path("tests/fixtures/runtime/workspace").resolve()
+    assert agent.config.workspace_dir == Path("tests/fixtures/works/openai_runtime_basic").resolve()
     assert "read" in agent.runtime.tool_executor.registry.names()
     assert "write" in agent.runtime.tool_executor.registry.names()
     assert "exec_script" in agent.runtime.tool_executor.registry.names()
@@ -106,3 +106,26 @@ def test_build_agent_resolves_discovered_agent_tools(monkeypatch: pytest.MonkeyP
     agent = build_agent(spec)
 
     assert "echo_payload" in agent.runtime.tool_executor.registry.names()
+
+
+def test_build_agent_resolves_curl_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    spec = OpenAIRuntimeAgentSpec(
+        type="openai-runtime",
+        model="gpt-test",
+        tools=("curl",),
+    )
+
+    agent = build_agent(spec)
+
+    assert "curl" in agent.runtime.tool_executor.registry.names()
+
+
+def test_build_agent_defaults_workspace_to_project_works_dir(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    config_path = Path("tests/fixtures/agents/openai_runtime_basic.json").resolve()
+    spec = load_agent_spec(config_path)
+
+    agent = build_agent(spec, config_path=config_path)
+
+    assert agent.config.workspace_dir == Path("tests/fixtures/works/openai_runtime_basic").resolve()

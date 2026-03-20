@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agents.base import AgentDescriptor, BaseAgent
-from clawcore.runtime import ReActRuntime
+from clawcore.runtime import ReActRuntime, RuntimeRunResult
 from clawcore.skilling.models import SkillDefinition
 
 
@@ -33,6 +33,19 @@ class RuntimeAgent(BaseAgent):
     async def run(self, user_input: str, *, workspace_dir: Path | None = None) -> str:
         resolved_workspace = workspace_dir or self.config.workspace_dir
         return await self.runtime.run(
+            user_input,
+            skills=list(self.config.skills),
+            active_skill=self.config.active_skill,
+            max_steps=self.config.max_steps,
+            base_instructions=self.config.base_instructions,
+            workspace_dir=resolved_workspace,
+        )
+
+    async def run_debug(
+        self, user_input: str, *, workspace_dir: Path | None = None
+    ) -> RuntimeRunResult:
+        resolved_workspace = workspace_dir or self.config.workspace_dir
+        return await self.runtime.run_debug(
             user_input,
             skills=list(self.config.skills),
             active_skill=self.config.active_skill,

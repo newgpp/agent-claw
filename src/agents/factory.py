@@ -155,12 +155,10 @@ def build_agent(spec: OpenAIRuntimeAgentSpec, *, config_path: str | Path | None 
             raise ValueError(f"Unknown skills in fixed skills directory: {', '.join(missing)}")
         loaded_skills = [available_by_name[name] for name in spec.skills]
 
-    workspace_dir = None
-    if spec.workspace_dir:
-        workspace_dir = Path(spec.workspace_dir)
-        if not workspace_dir.is_absolute() and resolved_config_path is not None:
-            workspace_dir = resolved_config_path.parent / workspace_dir
-        workspace_dir = workspace_dir.resolve()
+    workspace_dir = _resolve_workspace_dir(
+        spec=spec,
+        config_path=resolved_config_path,
+    )
 
     run_config = AgentRunConfig(
         base_instructions=spec.base_instructions,
@@ -248,3 +246,15 @@ def _resolve_fixed_skills_dir(config_path: Path | None) -> Path:
     if candidate.exists() and candidate.is_dir():
         return candidate
     raise ValueError("Could not resolve fixed skills directory named 'skills'.")
+
+
+def _resolve_workspace_dir(*, spec: OpenAIRuntimeAgentSpec, config_path: Path | None) -> Path:
+    if spec.workspace_dir:
+        workspace_dir = Path(spec.workspace_dir)
+        if not workspace_dir.is_absolute() and config_path is not None:
+            workspace_dir = config_path.parent / workspace_dir
+        return workspace_dir.resolve()
+
+    agent_id = config_path.stem if config_path is not None else "default"
+    project_root = config_path.parent.parent if config_path is not None else Path.cwd()
+    return (project_root / "works" / agent_id).resolve()

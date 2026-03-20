@@ -94,7 +94,6 @@ def setup_loguru(
             diagnose=False,
             format=(
                 "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {extra[service]} "
-                "| run_id={extra[run_id]} | session_id={extra[session_id]} "
                 "| trace_id={extra[trace_id]} | {message}"
             ),
         )
@@ -112,7 +111,6 @@ def setup_loguru(
             encoding="utf-8",
             format=(
                 "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {extra[service]} "
-                "| run_id={extra[run_id]} | session_id={extra[session_id]} "
                 "| trace_id={extra[trace_id]} | {message}"
             ),
         )

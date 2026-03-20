@@ -9,6 +9,8 @@ from clawcore.runtime.session import AgentSession
 from clawcore.runtime.react import ReActRuntime
 from clawcore.skilling.models import SkillDefinition
 from clawcore.tooling import ExecScriptTool, ReadTool, ToolExecutor, ToolPolicy, ToolRegistry, WriteTool
+from clawcore.tooling.base import ToolExecutionContext
+from common.observability import current_observability_context
 
 
 def build_tool_executor() -> ToolExecutor:
@@ -43,6 +45,50 @@ def test_runtime_completes_single_tool_turn(tmp_path: Path) -> None:
     result = asyncio.run(runtime.run("read it", workspace_dir=tmp_path))
 
     assert result == "read: runtime text"
+
+
+def test_runtime_run_debug_returns_final_answer_and_state(tmp_path: Path) -> None:
+    async def step_fn(session: AgentSession) -> ReActStep:
+        if not session.state.scratchpad:
+            return ReActStep(
+                thought="read file",
+                action=ToolCall(name="read", payload={"path": "note.txt"}),
+            )
+        return ReActStep(thought="done", final_answer=session.state.scratchpad[-1])
+
+    (tmp_path / "note.txt").write_text("runtime text", encoding="utf-8")
+
+    runtime = ReActRuntime(llm=MockLLM(step_fn), tool_executor=build_tool_executor())
+    result = asyncio.run(runtime.run_debug("read it", workspace_dir=tmp_path))
+
+    assert result.final_answer == "read: runtime text"
+    assert result.state.scratchpad == ["read: runtime text"]
+    assert result.state.tool_results[0].name == "read"
+    assert result.state.events[-1].event_type == "run.finished"
+    assert result.state.trace.events[-1].kind == "final_answer"
+
+
+def test_runtime_binds_and_resets_observability_context() -> None:
+    seen_contexts: list[dict[str, str]] = []
+
+    async def step_fn(session: AgentSession) -> ReActStep:
+        seen_contexts.append(current_observability_context())
+        return ReActStep(thought="done", final_answer="hello")
+
+    runtime = ReActRuntime(llm=MockLLM(step_fn), tool_executor=build_tool_executor())
+
+    result = asyncio.run(runtime.run_debug("trace me"))
+
+    assert result.final_answer == "hello"
+    assert len(seen_contexts) == 1
+    assert seen_contexts[0]["run_id"] == result.state.events[0].run_id
+    assert seen_contexts[0]["session_id"] == result.state.events[0].session_id
+    assert seen_contexts[0]["trace_id"] == result.state.events[0].trace_id
+    assert current_observability_context() == {
+        "run_id": "-",
+        "session_id": "-",
+        "trace_id": "-",
+    }
 
 
 def test_runtime_stops_on_max_steps() -> None:
@@ -136,6 +182,38 @@ def test_runtime_promotes_active_skill_after_read_skill(tmp_path: Path) -> None:
     assert result == "file-summary"
 
 
+def test_runtime_promotes_active_skill_after_read_skill_name_alias(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "file-summary"
+    skill_dir.mkdir(parents=True)
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.write_text("# File Summary\n\nSummarize a workspace file.\n", encoding="utf-8")
+    skill = SkillDefinition(
+        name="file-summary",
+        description="Summarize files.",
+        directory=skill_dir,
+        skill_file=skill_file,
+    )
+    registry = ToolRegistry()
+    from clawcore.tooling import ReadSkillTool
+
+    registry.register(ReadSkillTool())
+    executor = ToolExecutor(registry, policy=ToolPolicy())
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        if session.state.active_skill is None:
+            return ReActStep(
+                thought="Load the skill first.",
+                action=ToolCall(name="read_skill", payload={"skill_name": "file-summary"}),
+            )
+        return ReActStep(thought="done", final_answer=session.state.active_skill.name)
+
+    runtime = ReActRuntime(llm=MockLLM(step_fn), tool_executor=executor)
+
+    result = asyncio.run(runtime.run("summarize", skills=[skill], workspace_dir=tmp_path))
+
+    assert result == "file-summary"
+
+
 def test_runtime_can_load_multiple_skills_in_one_run(tmp_path: Path) -> None:
     first_dir = tmp_path / "skills" / "file-summary"
     first_dir.mkdir(parents=True)
@@ -189,3 +267,31 @@ def test_runtime_can_load_multiple_skills_in_one_run(tmp_path: Path) -> None:
 
     assert loaded_names == ["file-summary", "release-checker"]
     assert result == "file-summary,release-checker"
+
+
+def test_runtime_avoids_duplicate_tool_calls(tmp_path: Path) -> None:
+    class CountingReadTool(ReadTool):
+        calls = 0
+
+        async def execute(self, payload: dict[str, object], context: ToolExecutionContext) -> str:
+            type(self).calls += 1
+            return await super().execute(payload, context)
+
+    registry = ToolRegistry()
+    registry.register(CountingReadTool())
+    executor = ToolExecutor(registry, policy=ToolPolicy())
+    (tmp_path / "note.txt").write_text("runtime text", encoding="utf-8")
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        if len(session.state.scratchpad) < 2:
+            return ReActStep(
+                thought="read file",
+                action=ToolCall(name="read", payload={"path": "note.txt"}),
+            )
+        return ReActStep(thought="done", final_answer=session.state.scratchpad[-1])
+
+    runtime = ReActRuntime(llm=MockLLM(step_fn), tool_executor=executor)
+    result = asyncio.run(runtime.run("read it", workspace_dir=tmp_path, max_steps=3))
+
+    assert CountingReadTool.calls == 1
+    assert "Duplicate tool call avoided" in result

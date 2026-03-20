@@ -11,18 +11,20 @@ from clawcore.tooling.base import BaseTool, ToolExecutionContext
 
 
 class FakeWeatherTool(BaseTool):
-    name = "weather"
-    description = "Return a mocked weather report for a location."
+    name = "curl"
+    description = "Return a mocked weather response for a wttr.in URL."
 
     async def execute(self, payload: dict[str, object], context: ToolExecutionContext) -> str:
-        location = str(payload.get("location", "")).strip()
-        if not location:
-            raise ValueError("weather requires a non-empty 'location'.")
+        url = str(payload.get("url", "")).strip()
+        if not url:
+            raise ValueError("curl requires a non-empty 'url'.")
         if context.active_skill is None:
-            raise ValueError("weather requires the active weather skill.")
+            raise ValueError("curl requires the active weather skill.")
         if context.active_skill.name != "weather":
             raise ValueError(f"Unexpected active skill: {context.active_skill.name}")
-        return f"{location}: Sunny, 26C"
+        if "Hong+Kong" not in url and "Hong Kong" not in url and "%E9%A6%99%E6%B8%AF" not in url:
+            raise ValueError(f"Unexpected weather URL: {url}")
+        return "Hong Kong: Sunny, 26C"
 
 
 def build_runtime(step_fn) -> ReActRuntime:  # type: ignore[no-untyped-def]
@@ -46,11 +48,14 @@ def test_weather_skill_flow_loads_skill_and_queries_weather() -> None:
         if len(session.state.scratchpad) == 1:
             return ReActStep(
                 thought="Use the loaded weather skill to answer the request.",
-                action=ToolCall(name="weather", payload={"location": "Hong Kong"}),
+                action=ToolCall(
+                    name="curl",
+                    payload={"url": "https://wttr.in/Hong+Kong?format=3"},
+                ),
             )
         return ReActStep(thought="done", final_answer=session.state.scratchpad[-1])
 
     runtime = build_runtime(weather_flow)
     result = asyncio.run(runtime.run("What's the weather in Hong Kong?", skills=skills))
 
-    assert "weather: Hong Kong: Sunny, 26C" == result
+    assert "curl: Hong Kong: Sunny, 26C" == result

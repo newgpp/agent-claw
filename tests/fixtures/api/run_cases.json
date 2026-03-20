@@ -1,0 +1,39 @@
+[
+  {
+    "name": "run",
+    "method": "POST",
+    "path": "/runs",
+    "body": {
+      "agent_id": "demo-agent",
+      "user_input": "hello"
+    },
+    "status_code": 200,
+    "expected": {
+      "agent_id": "demo-agent",
+      "final_answer": "done: hello"
+    }
+  },
+  {
+    "name": "debug",
+    "method": "POST",
+    "path": "/runs/debug",
+    "body": {
+      "agent_id": "demo-agent",
+      "user_input": "hello"
+    },
+    "status_code": 200,
+    "expected": {
+      "agent_id": "demo-agent",
+      "final_answer": "done: hello",
+      "scratchpad": [
+        "echo_payload: hello"
+      ],
+      "tool_results": [
+        {
+          "name": "echo_payload",
+          "content": "hello"
+        }
+      ]
+    }
+  }
+]
