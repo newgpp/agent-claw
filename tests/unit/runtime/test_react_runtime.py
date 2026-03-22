@@ -430,6 +430,62 @@ def test_runtime_run_debug_planned_returns_plan_and_artifacts(tmp_path: Path) ->
     assert result.state.trace.events[1].kind == "plan"
 
 
+def test_runtime_run_debug_planner_first_completes_empty_plan_without_execution() -> None:
+    step_calls: list[str] = []
+
+    def plan_fn(session: AgentSession) -> ExecutionPlan:
+        return ExecutionPlan(
+            goal="Hong Kong is 26C today.",
+            subgoals=[],
+            success_criteria=["Answer the user directly"],
+        )
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        step_calls.append("called")
+        return ReActStep(thought="unexpected", final_answer="unexpected")
+
+    runtime = build_planned_runtime(step_fn, plan_fn)
+
+    result = asyncio.run(runtime.run_debug_planner_first("weather?"))
+
+    assert result.final_answer == "Hong Kong is 26C today."
+    assert result.state.plan is not None
+    assert result.state.plan.is_direct_answer
+    assert result.state.plan.status == PlanStatus.COMPLETED
+    assert result.state.artifacts == []
+    assert step_calls == []
+
+
+def test_runtime_run_planner_first_executes_single_subgoal(tmp_path: Path) -> None:
+    (tmp_path / "weather.txt").write_text("Hong Kong 26C", encoding="utf-8")
+
+    def plan_fn(session: AgentSession) -> ExecutionPlan:
+        return ExecutionPlan(
+            goal="Fetch the weather summary",
+            subgoals=[PlanSubgoal(id="s1", task="Read the weather file")],
+            success_criteria=["Weather is returned"],
+        )
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        if not session.state.scratchpad:
+            return ReActStep(
+                thought="Read the weather file.",
+                action=ToolCall(name="read", payload={"path": "weather.txt"}),
+            )
+        return ReActStep(thought="Done.", final_answer="weather summary ready")
+
+    runtime = build_planned_runtime(step_fn, plan_fn)
+
+    result = asyncio.run(runtime.run_debug_planner_first("weather?", workspace_dir=tmp_path, max_steps=2))
+
+    assert result.final_answer == "weather summary ready"
+    assert result.state.plan is not None
+    assert result.state.plan.is_single_step
+    assert result.state.plan.status == PlanStatus.COMPLETED
+    assert [subgoal.status for subgoal in result.state.plan.subgoals] == [PlanStatus.COMPLETED]
+    assert [artifact.name for artifact in result.state.artifacts] == ["s1"]
+
+
 def test_runtime_planned_mode_requires_planner() -> None:
     runtime = ReActRuntime(llm=MockLLM(lambda session: ReActStep(thought="done", final_answer="hello")), tool_executor=build_tool_executor())
 

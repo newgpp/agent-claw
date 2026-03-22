@@ -99,3 +99,30 @@ def test_runtime_react_loop_matches_fixture_cases(tmp_path: Path) -> None:
             assert asyncio.run(runtime.run_planned("plan it", workspace_dir=tmp_path, max_steps=2)) == (
                 "email draft ready"
             )
+
+
+def test_runtime_planner_first_handles_empty_and_single_step_plans(tmp_path: Path) -> None:
+    (tmp_path / "note.txt").write_text("fixture note", encoding="utf-8")
+
+    direct_runtime = build_planned_runtime(
+        lambda session: ReActStep(thought="unexpected", final_answer="unexpected"),
+        lambda session: ExecutionPlan(goal="direct answer", subgoals=[]),
+    )
+    assert asyncio.run(direct_runtime.run_planner_first("hi", workspace_dir=tmp_path)) == "direct answer"
+
+    async def single_step(session: AgentSession) -> ReActStep:
+        if not session.state.scratchpad:
+            return ReActStep(thought="read", action=ToolCall(name="read", payload={"path": "note.txt"}))
+        return ReActStep(thought="done", final_answer="single-step answer")
+
+    single_step_runtime = build_planned_runtime(
+        single_step,
+        lambda session: ExecutionPlan(
+            goal="Read the note",
+            subgoals=[PlanSubgoal(id="s1", task="Read the note file")],
+        ),
+    )
+    assert (
+        asyncio.run(single_step_runtime.run_planner_first("read it", workspace_dir=tmp_path, max_steps=2))
+        == "single-step answer"
+    )

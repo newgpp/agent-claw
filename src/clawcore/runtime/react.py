@@ -91,7 +91,27 @@ class ReActRuntime:
         base_instructions: str = "",
         workspace_dir: Path | None = None,
     ) -> str:
-        result = await self.run_debug_planned(
+        result = await self.run_debug_planner_first(
+            user_input,
+            skills=skills,
+            active_skill=active_skill,
+            max_steps=max_steps,
+            base_instructions=base_instructions,
+            workspace_dir=workspace_dir,
+        )
+        return result.final_answer
+
+    async def run_planner_first(
+        self,
+        user_input: str,
+        *,
+        skills: list[SkillDefinition] | None = None,
+        active_skill: SkillDefinition | None = None,
+        max_steps: int = 5,
+        base_instructions: str = "",
+        workspace_dir: Path | None = None,
+    ) -> str:
+        result = await self.run_debug_planner_first(
             user_input,
             skills=skills,
             active_skill=active_skill,
@@ -102,6 +122,25 @@ class ReActRuntime:
         return result.final_answer
 
     async def run_debug_planned(
+        self,
+        user_input: str,
+        *,
+        skills: list[SkillDefinition] | None = None,
+        active_skill: SkillDefinition | None = None,
+        max_steps: int = 5,
+        base_instructions: str = "",
+        workspace_dir: Path | None = None,
+    ) -> RuntimeRunResult:
+        return await self.run_debug_planner_first(
+            user_input,
+            skills=skills,
+            active_skill=active_skill,
+            max_steps=max_steps,
+            base_instructions=base_instructions,
+            workspace_dir=workspace_dir,
+        )
+
+    async def run_debug_planner_first(
         self,
         user_input: str,
         *,
@@ -145,60 +184,75 @@ class ReActRuntime:
                 subgoals=[subgoal.task for subgoal in plan.subgoals],
                 success_criteria=list(plan.success_criteria),
             )
-
-            if not plan.subgoals:
-                finished = await self._emit_run_finished(
-                    run_context,
-                    state,
-                    final_answer=plan.goal,
-                )
-                logger.info("Finished planned runtime with empty plan")
-                return RuntimeRunResult(final_answer=finished, state=state)
-
-            final_answer = ""
-            for subgoal in plan.subgoals:
-                state.active_subgoal_id = subgoal.id
-                state.active_subgoal_task = subgoal.task
-                state.active_subgoal_notes = subgoal.notes
-                subgoal.status = PlanStatus.IN_PROGRESS
-                state.trace.record("subgoal.started", subgoal.task, subgoal_id=subgoal.id)
-                subgoal_answer = await self._run_subgoal_loop(
-                    session=session,
-                    run_context=run_context,
-                    max_steps=max_steps,
-                    workspace_dir=workspace_dir,
-                    skills=resolved_skills,
-                )
-                artifact = PlanArtifact(
-                    name=subgoal.id,
-                    content=subgoal_answer,
-                    kind="subgoal_result",
-                )
-                state.artifacts.append(artifact)
-                state.trace.record(
-                    "artifact",
-                    artifact.content,
-                    artifact_name=artifact.name,
-                    artifact_kind=artifact.kind,
-                )
-                session.append_observation(
-                    f"subgoal_result[{subgoal.id} {subgoal.task}]: {subgoal_answer}"
-                )
-                subgoal.status = PlanStatus.COMPLETED
-                state.trace.record("subgoal.completed", subgoal.task, subgoal_id=subgoal.id)
-                final_answer = subgoal_answer
-
-            state.active_subgoal_id = None
-            state.active_subgoal_task = None
-            state.active_subgoal_notes = None
-            state.plan.status = PlanStatus.COMPLETED
+            final_answer = await self._execute_plan(
+                session=session,
+                run_context=run_context,
+                plan=plan,
+                max_steps=max_steps,
+                workspace_dir=workspace_dir,
+                skills=resolved_skills,
+            )
             finished = await self._emit_run_finished(run_context, state, final_answer=final_answer)
-            logger.info("Finished planned runtime with {} subgoal(s)", len(plan.subgoals))
+            logger.info("Finished planner-first runtime with {} subgoal(s)", len(plan.subgoals))
             return RuntimeRunResult(final_answer=finished, state=state)
         finally:
             reset_session_id(session_token)
             reset_run_id(run_token)
             reset_trace_id(trace_token)
+
+    async def _execute_plan(
+        self,
+        *,
+        session: AgentSession,
+        run_context: RunContext,
+        plan: ExecutionPlan,
+        max_steps: int,
+        workspace_dir: Path | None,
+        skills: tuple[SkillDefinition, ...],
+    ) -> str:
+        if plan.is_direct_answer:
+            plan.status = PlanStatus.COMPLETED
+            logger.info("Finished planner-first runtime with empty plan")
+            return plan.goal
+
+        final_answer = ""
+        for subgoal in plan.subgoals:
+            session.state.active_subgoal_id = subgoal.id
+            session.state.active_subgoal_task = subgoal.task
+            session.state.active_subgoal_notes = subgoal.notes
+            subgoal.status = PlanStatus.IN_PROGRESS
+            session.state.trace.record("subgoal.started", subgoal.task, subgoal_id=subgoal.id)
+            subgoal_answer = await self._run_subgoal_loop(
+                session=session,
+                run_context=run_context,
+                max_steps=max_steps,
+                workspace_dir=workspace_dir,
+                skills=skills,
+            )
+            artifact = PlanArtifact(
+                name=subgoal.id,
+                content=subgoal_answer,
+                kind="subgoal_result",
+            )
+            session.state.artifacts.append(artifact)
+            session.state.trace.record(
+                "artifact",
+                artifact.content,
+                artifact_name=artifact.name,
+                artifact_kind=artifact.kind,
+            )
+            session.append_observation(
+                f"subgoal_result[{subgoal.id} {subgoal.task}]: {subgoal_answer}"
+            )
+            subgoal.status = PlanStatus.COMPLETED
+            session.state.trace.record("subgoal.completed", subgoal.task, subgoal_id=subgoal.id)
+            final_answer = subgoal_answer
+
+        session.state.active_subgoal_id = None
+        session.state.active_subgoal_task = None
+        session.state.active_subgoal_notes = None
+        session.state.plan.status = PlanStatus.COMPLETED
+        return final_answer
 
     async def _run_debug_direct(
         self,
