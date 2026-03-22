@@ -187,7 +187,7 @@ def test_load_agent_spec_accepts_legacy_plan_enabled(tmp_path: Path) -> None:
 
     spec = load_agent_spec(config_path)
 
-    assert spec.planning.mode == PlanningMode.AUTO
+    assert spec.planning.mode == PlanningMode.ALWAYS
 
 
 def test_load_agent_spec_rejects_invalid_planning_mode(tmp_path: Path) -> None:

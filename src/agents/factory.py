@@ -219,7 +219,7 @@ def _parse_planning_config(raw: dict[str, object]) -> PlanningConfig:
         if not isinstance(raw_plan_enabled, bool):
             raise ValueError("'plan_enabled' must be a boolean when provided.")
         return PlanningConfig(
-            mode=PlanningMode.AUTO if raw_plan_enabled else PlanningMode.DISABLED
+            mode=PlanningMode.ALWAYS if raw_plan_enabled else PlanningMode.DISABLED
         )
 
     if raw_planning is None:
@@ -237,7 +237,7 @@ def _parse_planning_config(raw: dict[str, object]) -> PlanningConfig:
         mode = PlanningMode(normalized_mode)
     except ValueError as exc:
         raise ValueError(
-            "'planning.mode' must be one of: disabled, auto, always."
+            "'planning.mode' must be one of: disabled, always."
         ) from exc
 
     return PlanningConfig(mode=mode)
