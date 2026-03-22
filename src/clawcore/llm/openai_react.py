@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,13 +28,21 @@ Rules:
 - If you can answer the user, set "final_answer" and set "action" to null.
 - Never leave both "action" and "final_answer" null.
 - If an existing scratchpad observation already answers the user, return `final_answer` instead of calling another tool.
+- Runtime observations may be summarized for brevity. Do not assume missing detail was written to a file unless a prior tool result explicitly says it was written.
 - Do not repeat the same tool call with the same payload unless the prior result failed or the user explicitly asked for more detail.
 - Prefer using the available skill summaries first.
 - If a skill seems relevant but you need its full procedure, call `read_skill` before downstream tools.
 - Do not call `read_skill` when the current context is already sufficient to answer.
+- Do not call `read` for a file path unless the user provided that path or a prior successful tool result explicitly created or referenced that file.
 - Use `exec_script` only for declared script file paths such as `scripts/foo.py`.
 - Never pass shell commands like `curl ...` or `python ...` as the `script` value for `exec_script`.
 - If a skill summary recommends `curl` or shows `curl` command examples, call the `curl` tool directly instead of `exec_script`.
+- When emitting long string payloads such as `send_email.body` or `write.content`, output plain text content with normal JSON escaping only. Do not insert unnecessary backslashes before markdown punctuation.
+- When `execution.active_subgoal` is present, it is the only executable scope for this turn.
+- In planned runs, use `user_request` only as background constraints such as language, destination, recipient, or final output expectations.
+- Do not start later subgoals just because you can infer them from the user request, plan summary, or prior observations.
+- As soon as the active subgoal is satisfied, return `final_answer` immediately with a concise handoff summary instead of calling another tool.
+- When `runtime.file_cache` already includes the file content you need, use it directly instead of calling `read` again.
 """.strip()
 
 
@@ -88,36 +97,8 @@ class OpenAIReActLLM(BaseLLM):
 
     def _build_messages(self, session: AgentSession) -> list[dict[str, str]]:
         state = session.state
-        user_context: dict[str, object] = {
-            "user_input": state.user_input,
-            "active_skill": state.active_skill.name if state.active_skill is not None else None,
-            "loaded_skills": [skill.name for skill in state.loaded_skills],
-            "scratchpad_observations": list(state.scratchpad),
-            "plan": {
-                "goal": state.plan.goal,
-                "status": state.plan.status,
-                "subgoals": [
-                    {
-                        "id": subgoal.id,
-                        "task": subgoal.task,
-                        "status": subgoal.status,
-                        "notes": subgoal.notes,
-                    }
-                    for subgoal in state.plan.subgoals
-                ],
-                "success_criteria": list(state.plan.success_criteria),
-                "assumptions": list(state.plan.assumptions),
-            }
-            if state.plan is not None
-            else None,
-            "active_subgoal_id": state.active_subgoal_id,
-            "active_subgoal_task": state.active_subgoal_task,
-            "active_subgoal_notes": state.active_subgoal_notes,
-            "artifacts": [
-                {"name": artifact.name, "kind": artifact.kind, "content": artifact.content}
-                for artifact in state.artifacts
-            ],
-        }
+        state.sync_views()
+        user_context = state.build_executor_context()
 
         return [
             {
@@ -161,13 +142,30 @@ class OpenAIReActLLM(BaseLLM):
         try:
             payload = json.loads(content)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"OpenAI response was not valid JSON: {exc}") from exc
+            try:
+                payload = json.loads(self._repair_common_json_escapes(content))
+            except json.JSONDecodeError:
+                logger.error(
+                    "LLM response JSON parse failed model={} error_type={} detail={} content={}",
+                    self.config.model,
+                    type(exc).__name__,
+                    str(exc),
+                    content,
+                )
+                raise RuntimeError(f"OpenAI response was not valid JSON: {exc}") from exc
 
         if not isinstance(payload, dict):
+            logger.error(
+                "LLM response shape invalid model={} payload_type={} content={}",
+                self.config.model,
+                type(payload).__name__,
+                content,
+            )
             raise RuntimeError("OpenAI response must be a JSON object.")
 
         thought = str(payload.get("thought", "")).strip()
         if not thought:
+            logger.error("LLM response missing thought model={} content={}", self.config.model, content)
             raise RuntimeError("OpenAI response must include a non-empty 'thought'.")
 
         raw_action = payload.get("action")
@@ -176,12 +174,15 @@ class OpenAIReActLLM(BaseLLM):
         action: ToolCall | None = None
         if raw_action is not None:
             if not isinstance(raw_action, dict):
+                logger.error("LLM response action shape invalid model={} content={}", self.config.model, content)
                 raise RuntimeError("'action' must be an object or null.")
             name = str(raw_action.get("name", "")).strip()
             if not name:
+                logger.error("LLM response missing action.name model={} content={}", self.config.model, content)
                 raise RuntimeError("'action.name' must be a non-empty string.")
             payload_obj = raw_action.get("payload", {})
             if not isinstance(payload_obj, dict):
+                logger.error("LLM response action.payload invalid model={} content={}", self.config.model, content)
                 raise RuntimeError("'action.payload' must be an object.")
             action = ToolCall(name=name, payload=payload_obj)
 
@@ -192,9 +193,18 @@ class OpenAIReActLLM(BaseLLM):
                 final_answer = None
 
         if (action is None) == (final_answer is None):
+            logger.error(
+                "LLM response action/final_answer invariant failed model={} content={}",
+                self.config.model,
+                content,
+            )
             raise RuntimeError("OpenAI response must provide exactly one of 'action' or 'final_answer'.")
 
         return ReActStep(thought=thought, action=action, final_answer=final_answer)
+
+    def _repair_common_json_escapes(self, content: str) -> str:
+        """Repair common invalid backslash escapes sometimes emitted in long JSON strings."""
+        return re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", content)
 
     def _dump_json_for_log(self, payload: dict[str, object]) -> str:
         """Render log payloads consistently without escaping Unicode input."""

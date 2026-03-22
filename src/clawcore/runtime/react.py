@@ -6,6 +6,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterable
 
 from clawcore.llm.base import BaseLLM, BasePlanner
 from clawcore.models import ExecutionPlan, PlanArtifact, PlanStatus, PlanSubgoal, ReActStep, ToolResult
@@ -174,10 +175,12 @@ class ReActRuntime:
             )
             await self._emit_run_started(run_context, state)
             state.trace.record("input", user_input)
+            state.sync_views()
 
             plan = await self.planner.create_plan(session)
             state.plan = plan
             state.plan.status = PlanStatus.IN_PROGRESS
+            state.sync_views()
             logger.info(
                 "Plan created goal={} subgoal_count={} subgoal_ids={}",
                 plan.goal,
@@ -201,6 +204,15 @@ class ReActRuntime:
             finished = await self._emit_run_finished(run_context, state, final_answer=final_answer)
             logger.info("Finished planner-first runtime with {} subgoal(s)", len(plan.subgoals))
             return RuntimeRunResult(final_answer=finished, state=state)
+        except Exception as exc:
+            logger.exception(
+                "Planner-first runtime failed user_input={} active_subgoal_id={} error_type={} detail={}",
+                user_input,
+                state.active_subgoal_id if "state" in locals() else None,
+                type(exc).__name__,
+                str(exc),
+            )
+            raise
         finally:
             reset_session_id(session_token)
             reset_run_id(run_token)
@@ -226,7 +238,9 @@ class ReActRuntime:
             session.state.active_subgoal_id = subgoal.id
             session.state.active_subgoal_task = subgoal.task
             session.state.active_subgoal_notes = subgoal.notes
+            session.state.prompt_observations.clear()
             subgoal.status = PlanStatus.IN_PROGRESS
+            session.state.sync_views()
             session.state.trace.record("subgoal.started", subgoal.task, subgoal_id=subgoal.id)
             subgoal_answer = await self._run_subgoal_loop(
                 session=session,
@@ -241,16 +255,18 @@ class ReActRuntime:
                 kind="subgoal_result",
             )
             session.state.artifacts.append(artifact)
+            session.state.step_summaries.append(
+                self._build_step_summary(subgoal=subgoal, answer=subgoal_answer)
+            )
             session.state.trace.record(
                 "artifact",
                 artifact.content,
                 artifact_name=artifact.name,
                 artifact_kind=artifact.kind,
             )
-            session.append_observation(
-                f"subgoal_result[{subgoal.id} {subgoal.task}]: {subgoal_answer}"
-            )
             subgoal.status = PlanStatus.COMPLETED
+            session.state.prompt_observations.clear()
+            session.state.sync_views()
             session.state.trace.record("subgoal.completed", subgoal.task, subgoal_id=subgoal.id)
             final_answer = subgoal_answer
 
@@ -258,6 +274,7 @@ class ReActRuntime:
         session.state.active_subgoal_task = None
         session.state.active_subgoal_notes = None
         session.state.plan.status = PlanStatus.COMPLETED
+        session.state.sync_views()
         return final_answer
 
     async def _run_debug_direct(
@@ -291,6 +308,7 @@ class ReActRuntime:
             )
             await self._emit_run_started(run_context, state)
             state.trace.record("input", user_input)
+            state.sync_views()
             final_answer = await self._run_subgoal_loop(
                 session=session,
                 run_context=run_context,
@@ -301,6 +319,15 @@ class ReActRuntime:
             finished = await self._emit_run_finished(run_context, state, final_answer=final_answer)
             logger.info("Finished ReAct loop")
             return RuntimeRunResult(final_answer=finished, state=state)
+        except Exception as exc:
+            logger.exception(
+                "Direct runtime failed user_input={} active_subgoal_id={} error_type={} detail={}",
+                user_input,
+                state.active_subgoal_id if "state" in locals() else None,
+                type(exc).__name__,
+                str(exc),
+            )
+            raise
         finally:
             reset_session_id(session_token)
             reset_run_id(run_token)
@@ -318,7 +345,17 @@ class ReActRuntime:
         successful_tool_calls: dict[str, str] = {}
 
         for step_index in range(1, max_steps + 1):
-            step = await self.llm.next_step(session)
+            try:
+                step = await self.llm.next_step(session)
+            except Exception as exc:
+                logger.exception(
+                    "LLM step failed step_index={} active_subgoal_id={} error_type={} detail={}",
+                    step_index,
+                    session.state.active_subgoal_id,
+                    type(exc).__name__,
+                    str(exc),
+                )
+                raise
             self._record_step(session.state, step_index, step)
 
             if step.final_answer is not None:
@@ -337,6 +374,14 @@ class ReActRuntime:
                 skills=skills,
             )
             if result_status != ToolExecutionStatus.SUCCESS:
+                logger.error(
+                    "Tool action returned non-success step_index={} tool_name={} status={} active_subgoal_id={} detail={}",
+                    step_index,
+                    result_tool_name,
+                    result_status,
+                    session.state.active_subgoal_id,
+                    result_content,
+                )
                 raise RuntimeError(result_content)
 
             tool_result = ToolResult(name=result_tool_name, content=result_content)
@@ -344,6 +389,12 @@ class ReActRuntime:
             successful_tool_calls.setdefault(
                 self._action_signature(step.action.name, step.action.payload),
                 result_content,
+            )
+            self._cache_written_file(
+                state=session.state,
+                action_name=step.action.name,
+                action_payload=step.action.payload,
+                workspace_dir=workspace_dir,
             )
             if step.action.name == "read_skill":
                 selected_skill = self._resolve_skill_from_payload(step.action.payload, skills)
@@ -357,8 +408,21 @@ class ReActRuntime:
                 action_payload=step.action.payload,
                 skills=skills,
             )
-            session.append_observation(observation)
+            prompt_observation = self._build_prompt_observation(
+                tool_name=result_tool_name,
+                result_content=result_content,
+                action_payload=step.action.payload,
+                skills=skills,
+            )
+            session.append_observation(observation, prompt_observation=prompt_observation)
             session.state.trace.record("observation", observation)
+            fast_path_answer = self._try_fast_path_completion(
+                state=session.state,
+                tool_name=result_tool_name,
+                result_content=result_content,
+            )
+            if fast_path_answer is not None:
+                return fast_path_answer
 
         raise RuntimeError("ReAct loop exceeded max_steps without a final answer.")
 
@@ -382,6 +446,7 @@ class ReActRuntime:
         run_context.emit(called)
         await emit_hook(called, self.event_hook)
         state.events.append(called)
+        state.sync_views()
 
         action_signature = self._action_signature(action_name, action_payload)
         cached_content = successful_tool_calls.get(action_signature)
@@ -420,6 +485,7 @@ class ReActRuntime:
         run_context.emit(returned)
         await emit_hook(returned, self.event_hook)
         state.events.append(returned)
+        state.sync_views()
         return result_tool_name, result_status, result_content
 
     async def _emit_run_started(self, run_context: RunContext, state: RuntimeState) -> None:
@@ -432,6 +498,7 @@ class ReActRuntime:
         run_context.emit(run_started)
         await emit_hook(run_started, self.event_hook)
         state.events.append(run_started)
+        state.sync_views()
 
     async def _emit_run_finished(
         self,
@@ -450,6 +517,7 @@ class ReActRuntime:
         await emit_hook(finished, self.event_hook)
         state.events.append(finished)
         state.trace.record("final_answer", final_answer)
+        state.sync_views()
         return final_answer
 
     def _record_step(self, state: RuntimeState, step_index: int, step: ReActStep) -> None:
@@ -497,6 +565,140 @@ class ReActRuntime:
             "full_doc_available": True,
         }
         return "read_skill_summary: " + json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    def _build_prompt_observation(
+        self,
+        *,
+        tool_name: str,
+        result_content: str,
+        action_payload: dict[str, object],
+        skills: tuple[SkillDefinition, ...],
+    ) -> str:
+        if tool_name == "tavily":
+            return self._summarize_tavily_observation(result_content)
+        return self._build_observation(
+            tool_name=tool_name,
+            result_content=result_content,
+            action_payload=action_payload,
+            skills=skills,
+        )
+
+    def _build_step_summary(self, *, subgoal: PlanSubgoal, answer: str) -> str:
+        return f"{subgoal.id}: {subgoal.task} -> {self._summarize_for_prompt(answer)}"
+
+    def _summarize_for_prompt(self, value: str, *, limit: int = 280) -> str:
+        cleaned = " ".join(value.split())
+        if len(cleaned) <= limit:
+            return cleaned
+        return cleaned[: limit - 3] + "..."
+
+    def _summarize_tavily_observation(self, result_content: str) -> str:
+        try:
+            payload = json.loads(result_content)
+        except json.JSONDecodeError:
+            return f"tavily: {self._summarize_for_prompt(result_content)}"
+
+        if not isinstance(payload, dict):
+            return f"tavily: {self._summarize_for_prompt(result_content)}"
+
+        query = str(payload.get("query", "")).strip()
+        results = payload.get("results", [])
+        total_results = len(results) if isinstance(results, list) else 0
+        highlights: list[str] = []
+        if isinstance(results, list):
+            for item in results[:3]:
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("title", "")).strip()
+                url = str(item.get("url", "")).strip()
+                if title and url:
+                    highlights.append(f"{title} ({url})")
+                elif title:
+                    highlights.append(title)
+                elif url:
+                    highlights.append(url)
+        summary = {
+            "query": query,
+            "result_count": total_results,
+            "top_results": highlights,
+        }
+        return "tavily_summary: " + json.dumps(summary, ensure_ascii=False, sort_keys=True)
+
+    def _cache_written_file(
+        self,
+        *,
+        state: RuntimeState,
+        action_name: str,
+        action_payload: dict[str, object],
+        workspace_dir: Path | None,
+    ) -> None:
+        if action_name != "write":
+            return
+        raw_path = str(action_payload.get("path", "")).strip()
+        content = action_payload.get("content")
+        if not raw_path or not isinstance(content, str):
+            return
+        resolved_path = self._resolve_workspace_path(raw_path, workspace_dir)
+        state.cached_files[str(resolved_path)] = content
+        state.sync_views()
+
+    def _resolve_workspace_path(self, raw_path: str, workspace_dir: Path | None) -> Path:
+        candidate = Path(raw_path)
+        if candidate.is_absolute():
+            return candidate
+        base_dir = workspace_dir or Path.cwd()
+        return (base_dir / candidate).resolve()
+
+    def _try_fast_path_completion(
+        self,
+        *,
+        state: RuntimeState,
+        tool_name: str,
+        result_content: str,
+    ) -> str | None:
+        task = (state.active_subgoal_task or "").strip()
+        if not task:
+            return None
+
+        expected_tools = self._infer_expected_tools_for_task(task)
+        if len(expected_tools) != 1 or tool_name not in expected_tools:
+            return None
+
+        if tool_name == "read_skill":
+            return None
+
+        subgoal_id = state.active_subgoal_id or "subgoal"
+        return (
+            f"Subgoal {subgoal_id} completed: "
+            f"{self._build_fast_path_summary(tool_name=tool_name, result_content=result_content)}"
+        )
+
+    def _infer_expected_tools_for_task(self, task: str) -> set[str]:
+        lower_task = task.lower()
+        expected: set[str] = set()
+        explicit_tool_aliases: dict[str, Iterable[str]] = {
+            "curl": ("curl", "wttr.in"),
+            "tavily": ("tavily",),
+            "send_email": ("send_email",),
+            "read_skill": ("read_skill",),
+            "exec_script": ("exec_script",),
+            "read": ("read ", "read the", "read file"),
+            "write": ("write ", "write it to a file", "write to a file", "save to a file"),
+        }
+        for tool_name, aliases in explicit_tool_aliases.items():
+            if any(alias in lower_task for alias in aliases):
+                expected.add(tool_name)
+        return expected
+
+    def _build_fast_path_summary(self, *, tool_name: str, result_content: str) -> str:
+        if tool_name == "write":
+            return self._summarize_for_prompt(result_content)
+        if tool_name == "send_email":
+            return self._summarize_for_prompt(result_content)
+        if tool_name == "tavily":
+            summary = self._summarize_tavily_observation(result_content)
+            return summary.removeprefix("tavily_summary: ")
+        return self._summarize_for_prompt(result_content)
 
     def _summarize_skill_content(
         self,

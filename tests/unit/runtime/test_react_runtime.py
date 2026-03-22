@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -427,6 +428,11 @@ def test_runtime_run_debug_planned_returns_plan_and_artifacts(tmp_path: Path) ->
         PlanStatus.COMPLETED,
     ]
     assert [artifact.name for artifact in result.state.artifacts] == ["s1", "s2"]
+    assert result.state.step_summaries == [
+        "s1: Fetch the weather -> weather summary ready",
+        "s2: Draft the message -> email draft: bring an umbrella",
+    ]
+    assert result.state.prompt_state["step_summaries"] == result.state.step_summaries
     assert result.state.trace.events[1].kind == "plan"
 
 
@@ -478,12 +484,108 @@ def test_runtime_run_planner_first_executes_single_subgoal(tmp_path: Path) -> No
 
     result = asyncio.run(runtime.run_debug_planner_first("weather?", workspace_dir=tmp_path, max_steps=2))
 
-    assert result.final_answer == "weather summary ready"
+    assert result.final_answer == "Subgoal s1 completed: Hong Kong 26C"
     assert result.state.plan is not None
     assert result.state.plan.is_single_step
     assert result.state.plan.status == PlanStatus.COMPLETED
     assert [subgoal.status for subgoal in result.state.plan.subgoals] == [PlanStatus.COMPLETED]
     assert [artifact.name for artifact in result.state.artifacts] == ["s1"]
+
+
+def test_runtime_summarizes_tavily_prompt_observation() -> None:
+    runtime = ReActRuntime(llm=MockLLM(lambda session: ReActStep(thought="done", final_answer="ok")), tool_executor=build_tool_executor())
+    long_content = json.dumps(
+        {
+            "query": "小红书 北京 旅游",
+            "results": [
+                {
+                    "title": "北京景点推荐",
+                    "url": "https://example.com/1",
+                    "content": "A" * 2000,
+                },
+                {
+                    "title": "北京 Citywalk",
+                    "url": "https://example.com/2",
+                    "content": "B" * 2000,
+                },
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    observation = runtime._build_prompt_observation(  # type: ignore[attr-defined]
+        tool_name="tavily",
+        result_content=long_content,
+        action_payload={},
+        skills=(),
+    )
+
+    assert observation.startswith("tavily_summary: ")
+    assert "https://example.com/1" in observation
+    assert "AAAA" not in observation
+
+
+def test_runtime_uses_cached_file_content_across_subgoals_without_read(tmp_path: Path) -> None:
+    def plan_fn(session: AgentSession) -> ExecutionPlan:
+        return ExecutionPlan(
+            goal="Write a guide and deliver it",
+            subgoals=[
+                PlanSubgoal(id="s1", task="Use write to write the guide to a file"),
+                PlanSubgoal(id="s2", task="Prepare the delivery"),
+            ],
+            success_criteria=["Guide is saved", "Guide is ready to send"],
+        )
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        if session.state.active_subgoal_id == "s1":
+            return ReActStep(
+                thought="Write the guide.",
+                action=ToolCall(
+                    name="write",
+                    payload={"path": "guide.md", "content": "# Guide\n\nBring sunscreen."},
+                ),
+            )
+        if session.state.active_subgoal_id == "s2":
+            cached = session.state.cached_files.get(str((tmp_path / "guide.md").resolve()))
+            if cached is not None:
+                return ReActStep(thought="Use cached content.", final_answer=f"delivery ready: {cached}")
+            return ReActStep(
+                thought="Read the guide from disk.",
+                action=ToolCall(name="read", payload={"path": "guide.md"}),
+            )
+        return ReActStep(thought="done", final_answer="done")
+
+    runtime = build_planned_runtime(step_fn, plan_fn)
+
+    result = asyncio.run(runtime.run_debug_planner_first("deliver guide", workspace_dir=tmp_path, max_steps=2))
+
+    assert result.final_answer == "delivery ready: # Guide\n\nBring sunscreen."
+    assert [item.name for item in result.state.tool_results] == ["write"]
+
+
+def test_runtime_fast_paths_single_tool_subgoal_completion(tmp_path: Path) -> None:
+    (tmp_path / "weather.txt").write_text("Hong Kong 26C", encoding="utf-8")
+
+    def plan_fn(session: AgentSession) -> ExecutionPlan:
+        return ExecutionPlan(
+            goal="Fetch the weather summary",
+            subgoals=[PlanSubgoal(id="s1", task="Use read to read the weather file")],
+            success_criteria=["Weather is returned"],
+        )
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        return ReActStep(
+            thought="Read the weather file.",
+            action=ToolCall(name="read", payload={"path": "weather.txt"}),
+        )
+
+    runtime = build_planned_runtime(step_fn, plan_fn)
+
+    result = asyncio.run(runtime.run_debug_planner_first("weather?", workspace_dir=tmp_path, max_steps=1))
+
+    assert result.final_answer == "Subgoal s1 completed: Hong Kong 26C"
+    assert result.state.plan is not None
+    assert result.state.plan.status == PlanStatus.COMPLETED
 
 
 def test_runtime_planned_mode_requires_planner() -> None:

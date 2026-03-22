@@ -83,6 +83,8 @@ def build_session() -> AgentSession:
         active_skill=skill,
     )
     state.scratchpad.append("read: note contents")
+    state.prompt_observations.append("read: note contents")
+    state.sync_views()
     return AgentSession(state=state)
 
 
@@ -105,7 +107,13 @@ def build_planned_session() -> AgentSession:
                     task="Fetch Tangshan weather",
                     status=PlanStatus.IN_PROGRESS,
                     notes="Use the weather skill and curl, not exec_script.",
-                )
+                ),
+                PlanSubgoal(
+                    id="s2",
+                    task="Draft the email",
+                    status=PlanStatus.PENDING,
+                    notes="Use the weather result as context for the email.",
+                ),
             ],
             success_criteria=["Weather fetched"],
             status=PlanStatus.IN_PROGRESS,
@@ -141,10 +149,13 @@ def test_openai_react_llm_parses_action_response() -> None:
         in request["messages"][0]["content"]
     )
     assert "If a skill seems relevant but you need its full procedure" in request["messages"][0]["content"]
+    assert "Do not call `read` for a file path unless the user provided that path" in request["messages"][0]["content"]
     assert "Never pass shell commands like `curl ...` or `python ...` as the `script` value" in request["messages"][0]["content"]
+    assert "Do not insert unnecessary backslashes before markdown punctuation" in request["messages"][0]["content"]
     assert '"active_skill": "file-summary"' in request["messages"][1]["content"]
     assert '"loaded_skills": ["file-summary"]' in request["messages"][1]["content"]
-    assert '"scratchpad_observations": ["read: note contents"]' in request["messages"][1]["content"]
+    assert '"observations": ["read: note contents"]' in request["messages"][1]["content"]
+    assert '"step_summaries": []' in request["messages"][1]["content"]
 
 
 def test_openai_react_llm_parses_final_answer_response() -> None:
@@ -169,6 +180,23 @@ def test_openai_react_llm_rejects_invalid_json() -> None:
 
     with pytest.raises(RuntimeError, match="valid JSON"):
         asyncio.run(llm.next_step(build_session()))
+
+
+def test_openai_react_llm_repairs_common_invalid_json_escapes() -> None:
+    client = FakeOpenAIClient(
+        '{"thought":"Send the email.","action":{"name":"send_email","payload":{"to":"newgpp@hotmail.com","subject":"北京出行指南","body":"第一行\\n第二行\\-第三行"}},"final_answer":null}'
+    )
+    llm = OpenAIReActLLM(
+        OpenAIReActConfig(model="deepseek-chat", api_key="test-key"),
+        client=client,  # type: ignore[arg-type]
+    )
+
+    step = asyncio.run(llm.next_step(build_session()))
+
+    assert step.action is not None
+    assert step.action.name == "send_email"
+    assert step.action.payload["subject"] == "北京出行指南"
+    assert step.action.payload["body"] == "第一行\n第二行\\-第三行"
 
 
 def test_openai_react_llm_logs_request_and_response(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -230,6 +258,13 @@ def test_openai_react_llm_includes_active_subgoal_context() -> None:
     asyncio.run(llm.next_step(build_planned_session()))
 
     request = client.chat.completions.calls[0]
-    assert '"active_subgoal_id": "s1"' in request["messages"][1]["content"]
-    assert '"active_subgoal_task": "Fetch Tangshan weather"' in request["messages"][1]["content"]
-    assert '"active_subgoal_notes": "Use the weather skill and curl, not exec_script."' in request["messages"][1]["content"]
+    system_message = request["messages"][0]["content"]
+    runtime_context = request["messages"][1]["content"]
+
+    assert "When `execution.active_subgoal` is present, it is the only executable scope" in system_message
+    assert "As soon as the active subgoal is satisfied, return `final_answer` immediately" in system_message
+    assert "runtime.file_cache" in system_message
+    assert '"user_request": {"raw_input": "Check Tangshan weather and write an email"}' in runtime_context
+    assert '"active_subgoal": {"id": "s1", "notes": "Use the weather skill and curl, not exec_script.", "task": "Fetch Tangshan weather"}' in runtime_context
+    assert '"remaining_subgoal_ids": ["s2"]' in runtime_context
+    assert '"task": "Draft the email"' not in runtime_context
