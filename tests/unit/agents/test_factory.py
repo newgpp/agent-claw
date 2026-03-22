@@ -149,19 +149,6 @@ def test_build_agent_resolves_send_email_tool(monkeypatch: pytest.MonkeyPatch) -
     assert "send_email" in agent.runtime.tool_executor.registry.names()
 
 
-def test_build_agent_resolves_open_meteo_tool(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    spec = OpenAIRuntimeAgentSpec(
-        type="openai-runtime",
-        model="gpt-test",
-        tools=("open_meteo",),
-    )
-
-    agent = build_agent(spec)
-
-    assert "open_meteo" in agent.runtime.tool_executor.registry.names()
-
-
 def test_build_agent_defaults_workspace_to_project_works_dir(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     config_path = Path("tests/fixtures/agents/openai_runtime_basic.json").resolve()

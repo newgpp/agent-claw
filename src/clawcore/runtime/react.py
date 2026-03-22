@@ -178,6 +178,12 @@ class ReActRuntime:
             plan = await self.planner.create_plan(session)
             state.plan = plan
             state.plan.status = PlanStatus.IN_PROGRESS
+            logger.info(
+                "Plan created goal={} subgoal_count={} subgoal_ids={}",
+                plan.goal,
+                len(plan.subgoals),
+                [subgoal.id for subgoal in plan.subgoals],
+            )
             state.trace.record(
                 "plan",
                 plan.goal,

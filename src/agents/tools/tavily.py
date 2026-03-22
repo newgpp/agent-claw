@@ -38,7 +38,7 @@ class TavilyTool(BaseTool):
 
         topic = str(payload.get("topic", "general")).strip().lower() or "general"
         if topic not in {"general", "news"}:
-            raise ValueError("tavily 'topic' must be 'general' or 'news'.")
+            topic = "general"
 
         base_url = os.environ.get("TAVILY_API_URL", "https://api.tavily.com/search").strip()
         request_payload = {

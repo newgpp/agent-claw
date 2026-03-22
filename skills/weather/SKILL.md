@@ -1,6 +1,6 @@
 ---
 name: weather
-description: "Get current weather and forecasts via Open-Meteo or wttr.in. Use when: user asks about weather, temperature, or forecasts for any location. NOT for: historical weather data, severe weather alerts, or detailed meteorological analysis. No API key needed."
+description: "Get current weather and forecasts via wttr.in or Open-Meteo. Use when: user asks about weather, temperature, or forecasts for any location. NOT for: historical weather data, severe weather alerts, or detailed meteorological analysis. No API key needed."
 homepage: https://wttr.in/:help
 metadata: { "openclaw": { "emoji": "☔", "requires": { "bins": ["curl"] } } }
 ---
@@ -32,20 +32,8 @@ Get current weather conditions and forecasts.
 ## Location
 
 Always include a city, region, or airport code in weather queries.
-When a place name can refer to multiple locations, prefer the most specific form
-available, such as `唐山市, 河北, 中国` or `Tangshan, Hebei, China`, instead of
-only `唐山` or `Tangshan`.
 
 ## Commands
-
-### Preferred Tooling
-
-Prefer the `open_meteo` tool when it is available because it returns structured
-weather data and avoids depending on `wttr.in`.
-
-Use `wttr.in` with `curl` only as a fallback when `open_meteo` is unavailable.
-If the user gives an ambiguous place name, ask for a more specific location or
-pass a fully qualified location to the tool instead of guessing in code.
 
 ### Current Weather
 

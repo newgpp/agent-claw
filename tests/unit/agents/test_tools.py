@@ -3,7 +3,6 @@ import json
 
 import pytest
 
-from agents.tools.open_meteo import OpenMeteoTool
 from agents.tools.send_email import SendEmailTool
 from agents.tools.tavily import TavilyTool
 from clawcore.tooling import ToolExecutionContext
@@ -44,117 +43,6 @@ class FakeAsyncClient:
                         "content": "Hong Kong will be warm today.",
                     }
                 ],
-            }
-        )
-
-    async def get(self, url: str, params: dict[str, object]) -> FakeHTTPResponse:
-        type(self).calls.append((url, params))
-        if "geocoding-api.open-meteo.com" in url:
-            query = str(params.get("name", ""))
-            if query == "北京":
-                return FakeHTTPResponse(
-                    {
-                        "results": [
-                            {
-                                "name": "北京",
-                                "country": "中国",
-                                "admin1": "重庆市",
-                                "admin2": "重庆市",
-                                "latitude": 30.72,
-                                "longitude": 108.67,
-                                "feature_code": "PPL",
-                            }
-                        ]
-                    }
-                )
-            if query == "北京市":
-                return FakeHTTPResponse(
-                    {
-                        "results": [
-                            {
-                                "name": "北京市",
-                                "country": "中国",
-                                "admin1": "北京",
-                                "admin2": "北京市",
-                                "latitude": 39.90,
-                                "longitude": 116.39,
-                                "feature_code": "PPLC",
-                                "population": 18960744,
-                            }
-                        ]
-                    }
-                )
-            if query == "Beijing, China":
-                return FakeHTTPResponse({"results": []})
-            if query == "Beijing":
-                return FakeHTTPResponse(
-                    {
-                        "results": [
-                            {
-                                "name": "北京市",
-                                "country": "中国",
-                                "admin1": "北京",
-                                "admin2": "北京市",
-                                "latitude": 39.90,
-                                "longitude": 116.39,
-                                "feature_code": "PPLC",
-                                "population": 18960744,
-                            }
-                        ]
-                    }
-                )
-            if query == "唐山":
-                return FakeHTTPResponse(
-                    {
-                        "results": [
-                            {
-                                "name": "唐山",
-                                "country": "中国",
-                                "admin1": "河北",
-                                "latitude": 39.64381,
-                                "longitude": 118.18319,
-                                "feature_code": "PPLA2",
-                                "population": 3372102,
-                            },
-                            {
-                                "name": "唐山",
-                                "country": "中国",
-                                "admin1": "贵州",
-                                "latitude": 25.93,
-                                "longitude": 104.68,
-                                "feature_code": "PPL",
-                            }
-                        ]
-                    }
-                )
-            return FakeHTTPResponse(
-                {
-                    "results": [
-                        {
-                            "name": "Tangshan",
-                            "country": "China",
-                            "admin1": "Hebei",
-                            "latitude": 39.63,
-                            "longitude": 118.18,
-                        }
-                    ]
-                }
-            )
-        return FakeHTTPResponse(
-            {
-                "current": {
-                    "temperature_2m": 14.2,
-                    "relative_humidity_2m": 35,
-                    "apparent_temperature": 12.8,
-                    "weather_code": 1,
-                    "wind_speed_10m": 11.3,
-                },
-                "daily": {
-                    "temperature_2m_max": [18.1],
-                    "temperature_2m_min": [9.4],
-                    "precipitation_probability_max": [5],
-                    "weather_code": [1],
-                },
             }
         )
 
@@ -224,6 +112,24 @@ def test_tavily_tool_returns_normalized_results(monkeypatch: pytest.MonkeyPatch)
     assert FakeAsyncClient.calls[0][1]["search_depth"] == "advanced"
 
 
+def test_tavily_tool_falls_back_to_general_topic_for_invalid_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setenv("TAVILY_API_URL", "https://api.tavily.test/search")
+    monkeypatch.setattr("agents.tools.tavily.httpx.AsyncClient", FakeAsyncClient)
+    FakeAsyncClient.calls.clear()
+
+    asyncio.run(
+        TavilyTool().execute(
+            {"query": "beijing travel weather", "topic": "travel"},
+            ToolExecutionContext(),
+        )
+    )
+
+    assert FakeAsyncClient.calls[0][1]["topic"] == "general"
+
+
 def test_send_email_requires_required_fields() -> None:
     tool = SendEmailTool()
 
@@ -235,75 +141,6 @@ def test_send_email_requires_required_fields() -> None:
 
     with pytest.raises(ValueError, match="non-empty 'body'"):
         asyncio.run(tool.execute({"to": "user@example.com", "subject": "Hello"}, ToolExecutionContext()))
-
-
-def test_open_meteo_requires_location() -> None:
-    with pytest.raises(ValueError, match="non-empty 'location'"):
-        asyncio.run(OpenMeteoTool().execute({}, ToolExecutionContext()))
-
-
-def test_open_meteo_returns_normalized_weather(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("agents.tools.open_meteo.httpx.AsyncClient", FakeAsyncClient)
-    FakeAsyncClient.calls.clear()
-
-    result = asyncio.run(
-        OpenMeteoTool().execute({"location": "Tangshan", "days": 1}, ToolExecutionContext())
-    )
-
-    payload = json.loads(result)
-
-    assert payload["location"]["name"] == "Tangshan"
-    assert payload["location"]["country"] == "China"
-    assert payload["location"]["admin1"] == "Hebei"
-    assert payload["current"]["temperature_2m"] == 14.2
-    assert payload["daily"]["temperature_2m_max"] == [18.1]
-
-
-def test_open_meteo_falls_back_from_short_chinese_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("agents.tools.open_meteo.httpx.AsyncClient", FakeAsyncClient)
-    FakeAsyncClient.calls.clear()
-
-    result = asyncio.run(
-        OpenMeteoTool().execute({"location": "北京", "days": 1}, ToolExecutionContext())
-    )
-
-    payload = json.loads(result)
-
-    assert payload["location"]["name"] == "北京市"
-    assert payload["location"]["admin1"] == "北京"
-    assert any(call[1].get("name") == "北京市" for call in FakeAsyncClient.calls if "geocoding-api.open-meteo.com" in call[0])
-
-
-def test_open_meteo_falls_back_from_comma_separated_query(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("agents.tools.open_meteo.httpx.AsyncClient", FakeAsyncClient)
-    FakeAsyncClient.calls.clear()
-
-    result = asyncio.run(
-        OpenMeteoTool().execute({"location": "Beijing, China", "days": 1}, ToolExecutionContext())
-    )
-
-    payload = json.loads(result)
-
-    assert payload["location"]["name"] == "北京市"
-    assert any(call[1].get("name") == "Beijing" for call in FakeAsyncClient.calls if "geocoding-api.open-meteo.com" in call[0])
-
-
-def test_open_meteo_falls_back_from_specific_chinese_location(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("agents.tools.open_meteo.httpx.AsyncClient", FakeAsyncClient)
-    FakeAsyncClient.calls.clear()
-
-    result = asyncio.run(
-        OpenMeteoTool().execute({"location": "唐山市, 河北, 中国", "days": 1}, ToolExecutionContext())
-    )
-
-    payload = json.loads(result)
-
-    assert payload["location"]["name"] == "唐山"
-    assert payload["location"]["admin1"] == "河北"
-    queried_names = [call[1].get("name") for call in FakeAsyncClient.calls if "geocoding-api.open-meteo.com" in call[0]]
-    assert "唐山市, 河北, 中国" in queried_names
-    assert "唐山市" in queried_names
-    assert "唐山" in queried_names
 
 
 
