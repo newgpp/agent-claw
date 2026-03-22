@@ -3,7 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from apps.env import load_dotenv, resolve_default_dotenv_path
+from apps.env import (
+    get_env_bool,
+    load_dotenv,
+    resolve_api_logging,
+    resolve_default_dotenv_path,
+)
 from apps.api.run import resolve_api_bind
 
 
@@ -37,3 +42,28 @@ def test_resolve_api_bind_reads_env_values(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert host == "0.0.0.0"
     assert port == 9000
+
+
+def test_get_env_bool_reads_common_true_false_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FLAG_TRUE", "true")
+    monkeypatch.setenv("FLAG_FALSE", "off")
+
+    assert get_env_bool("FLAG_TRUE") is True
+    assert get_env_bool("FLAG_FALSE", default=True) is False
+
+
+def test_get_env_bool_rejects_invalid_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FLAG_INVALID", "maybe")
+
+    with pytest.raises(ValueError, match="FLAG_INVALID must be a valid boolean value."):
+        get_env_bool("FLAG_INVALID")
+
+
+def test_resolve_api_logging_reads_env_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENT_CLAW_LOG_TO_FILE", "yes")
+    monkeypatch.setenv("AGENT_CLAW_LOG_DIR", "runtime-logs")
+
+    log_to_file, log_dir = resolve_api_logging()
+
+    assert log_to_file is True
+    assert log_dir == "runtime-logs"

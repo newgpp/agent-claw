@@ -25,15 +25,21 @@
     "expected": {
       "agent_id": "demo-agent",
       "final_answer": "done: hello",
-      "scratchpad": [
-        "echo_payload: hello"
-      ],
-      "tool_results": [
-        {
-          "name": "echo_payload",
-          "content": "hello"
-        }
-      ]
+      "step_summaries": [],
+      "prompt_state": {
+        "user_input": "hello",
+        "active_skill": null,
+        "loaded_skills": [],
+        "step_summaries": [],
+        "observations": [
+          "echo_payload: hello"
+        ],
+        "plan": null,
+        "active_subgoal_id": null,
+        "active_subgoal_task": null,
+        "active_subgoal_notes": null,
+        "artifacts": []
+      }
     }
   }
 ]

@@ -136,13 +136,27 @@ class OpenAIPlanner(BasePlanner):
         try:
             payload = json.loads(content)
         except json.JSONDecodeError as exc:
+            logger.error(
+                "Planner response JSON parse failed model={} error_type={} detail={} content={}",
+                self.config.model,
+                type(exc).__name__,
+                str(exc),
+                content,
+            )
             raise RuntimeError(f"OpenAI planner response was not valid JSON: {exc}") from exc
 
         if not isinstance(payload, dict):
+            logger.error(
+                "Planner response shape invalid model={} payload_type={} content={}",
+                self.config.model,
+                type(payload).__name__,
+                content,
+            )
             raise RuntimeError("OpenAI planner response must be a JSON object.")
 
         goal = str(payload.get("goal", "")).strip()
         if not goal:
+            logger.error("Planner response missing goal model={} content={}", self.config.model, content)
             raise RuntimeError("OpenAI planner response must include a non-empty 'goal'.")
 
         subgoals = self._parse_subgoals(payload.get("subgoals", []))

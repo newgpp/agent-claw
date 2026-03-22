@@ -14,6 +14,8 @@ class AgentSession:
     state: RuntimeState
     history: list[str] = field(default_factory=list)
 
-    def append_observation(self, observation: str) -> None:
+    def append_observation(self, observation: str, *, prompt_observation: str | None = None) -> None:
         self.history.append(observation)
         self.state.scratchpad.append(observation)
+        self.state.prompt_observations.append(prompt_observation if prompt_observation is not None else observation)
+        self.state.sync_views()

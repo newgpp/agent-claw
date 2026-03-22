@@ -23,6 +23,7 @@ class DemoAPIAgent(BaseAgent):
         assert workspace_dir is None
         state = RuntimeState(user_input=user_input)
         state.scratchpad.append(f"echo_payload: {user_input}")
+        state.prompt_observations.append(f"echo_payload: {user_input}")
         state.tool_results.append(ToolResult(name="echo_payload", content=user_input))
         state.events.append(
             RunFinished(
@@ -75,8 +76,10 @@ def test_api_endpoints_match_fixture_cases() -> None:
         for key, value in case["expected"].items():
             assert payload[key] == value
         if case["name"] == "debug":
-            assert payload["events"][0]["event_type"] == "run.finished"
-            assert payload["trace"][0]["kind"] == "final_answer"
+            assert payload["debug_state"]["scratchpad"] == ["echo_payload: hello"]
+            assert payload["debug_state"]["tool_results"] == [{"name": "echo_payload", "content": "hello"}]
+            assert payload["debug_state"]["events"][0]["event_type"] == "run.finished"
+            assert payload["debug_state"]["trace"][0]["kind"] == "final_answer"
 
 
 def test_api_logs_run_request_payload(monkeypatch: pytest.MonkeyPatch) -> None:

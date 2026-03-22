@@ -159,6 +159,39 @@ prepare_run()
 - `trace`
   - ordered timeline of the run across thought, action, observation, and final answer
 
+### Runtime state direction for planner-first context control
+
+- Problem:
+  - planner-first debug payloads currently duplicate large raw tool outputs across `scratchpad`, `tool_results`, `events`, and `trace`
+  - multi-step runs can spend more tokens replaying execution history than solving the active subgoal
+  - repeated tool calls and repeated artifact reads inflate executor prompt size without adding new reasoning value
+- Direction:
+  - keep V1 simple and optimize only for prompt token reduction
+  - stop feeding raw tool outputs and full execution history back into the executor prompt
+  - use short per-step summaries as the default handoff between completed steps and the active step
+  - do not compress within the active step; compact only when handing off to the next step
+- V1 target state:
+  - `step_summaries`
+    - one short summary per completed step
+    - carries only the facts needed by later steps, such as artifact paths or key conclusions
+  - `prompt_state`
+    - the only state fed back into the executor prompt
+    - contains run goal, active step, and prior step summaries
+  - `debug_state`
+    - holds raw tool outputs, verbose events, and full trace data for inspection
+    - not included in executor prompt construction
+- Prompt construction rule:
+  - executor prompt should include:
+    - system prompt
+    - compact prompt state
+    - active step definition
+    - prior step summaries
+  - executor prompt should exclude:
+    - raw tool outputs
+    - duplicated tool payloads
+    - duplicate artifact reads
+    - full event and trace history by default
+
 ## PR Roadmap
 
 Historical note:
@@ -795,6 +828,52 @@ Historical note:
   - all unit tests pass
   - end-to-end demos show planner-first behavior clearly
   - documentation no longer describes the old dual-track mental model
+
+### PR 20 - Prompt-State Compaction V1
+
+- Goal:
+  - reduce planner-first token usage with the smallest useful change set: step summaries, prompt/debug state separation, and no raw tool output replay in executor prompts
+- Scope:
+  - `src/clawcore/models.py`
+  - `src/clawcore/runtime/react.py`
+  - `src/clawcore/runtime/session.py`
+  - `src/clawcore/runtime/prompt_builder.py`
+  - `src/apps/api/schemas.py`
+  - runtime and API unit tests
+- Deliverables:
+  - new runtime state fields for:
+    - `step_summaries`
+    - `prompt_state`
+    - `debug_state`
+  - step completion compaction that converts each completed step into one short summary entry
+  - no compression of the active step working set while that step is still in progress
+  - prompt builder updates so only prompt-visible compact state is fed back into the executor
+  - raw tool outputs remain available in debug responses but are excluded from executor prompt construction
+  - debug schema updates that distinguish:
+    - prompt-visible compact state
+    - raw debug-only state
+  - simple deduplication for repeated tool calls and repeated artifact reads in prompt-visible state
+- Unit test acceptance:
+  - completing one step does not inject its raw tool outputs into the next step prompt
+  - step summaries preserve required handoff facts such as artifact paths and key conclusions
+  - prompt builder includes goal, active step, and prior step summaries only and remains deterministic
+  - active-step observations remain uncompressed until the step is completed
+  - debug schema cleanly exposes compact prompt-visible state separately from raw debug-only state
+- Integration test need:
+  - yes
+- Integration dataset:
+  - extend `tests/fixtures/runtime/planned_cases.json`
+  - add `tests/fixtures/api/context_compaction_cases.json`
+- cases:
+  - multi-step run with large tool output carries only step summaries into the next step prompt
+  - artifact-producing step passes only file path and summary into the following email-delivery step
+  - duplicate tool call does not duplicate prompt-visible state
+  - debug endpoint still exposes raw payload content for inspection
+- PR exit criteria:
+  - all unit tests pass
+  - integration fixtures prove that executor prompt context is smaller for multi-step runs with large tool outputs
+  - no regression in final-answer correctness for multi-step planner-first runs
+  - debug output remains useful without forcing raw payload replay into executor context
 
 ## Testing Strategy
 

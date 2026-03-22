@@ -7,6 +7,7 @@ from common.events import RunFinished
 def test_debug_run_response_serializes_runtime_result_stably() -> None:
     state = RuntimeState(user_input="hello")
     state.scratchpad.append("echo_payload: hello")
+    state.prompt_observations.append("echo_payload: hello")
     state.tool_results.append(ToolResult(name="echo_payload", content="hello"))
     state.events.append(
         RunFinished(
@@ -25,7 +26,9 @@ def test_debug_run_response_serializes_runtime_result_stably() -> None:
     dumped = response.model_dump()
 
     assert dumped["agent_id"] == "demo-agent"
-    assert dumped["tool_results"] == [{"name": "echo_payload", "content": "hello"}]
+    assert dumped["step_summaries"] == []
+    assert dumped["prompt_state"]["observations"] == ["echo_payload: hello"]
+    assert dumped["debug_state"]["tool_results"] == [{"name": "echo_payload", "content": "hello"}]
     assert dumped["plan"] is None
     assert dumped["artifacts"] == []
     assert dumped["replanning_count"] == 0
@@ -34,8 +37,8 @@ def test_debug_run_response_serializes_runtime_result_stably() -> None:
         "executor": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         "total": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
     }
-    assert dumped["events"][0]["event_type"] == "run.finished"
-    assert dumped["trace"][0]["kind"] == "final_answer"
+    assert dumped["debug_state"]["events"][0]["event_type"] == "run.finished"
+    assert dumped["debug_state"]["trace"][0]["kind"] == "final_answer"
 
 
 def test_debug_run_response_serializes_plan_state() -> None:
@@ -74,6 +77,7 @@ def test_debug_run_response_serializes_plan_state() -> None:
     assert dumped["plan"]["is_direct_answer"] is False
     assert dumped["plan"]["is_single_step"] is False
     assert dumped["active_subgoal_id"] == "s2"
+    assert dumped["prompt_state"]["active_subgoal_id"] == "s2"
     assert dumped["artifacts"] == [{"name": "weather_report", "content": "Hong Kong: 26C", "kind": "note"}]
     assert dumped["replanning_count"] == 1
     assert dumped["token_usage"] == {

@@ -29,6 +29,28 @@ def resolve_default_dotenv_path() -> Path:
     return (Path(__file__).resolve().parents[2] / ".env").resolve()
 
 
+def get_env_bool(name: str, default: bool = False) -> bool:
+    """Return a boolean env flag using common truthy/falsey string values."""
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+
+    normalized = raw_value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a valid boolean value.")
+
+
+def resolve_api_logging() -> tuple[bool, str]:
+    """Return the configured API log file toggle and directory."""
+    load_dotenv()
+    log_to_file = get_env_bool("AGENT_CLAW_LOG_TO_FILE", default=False)
+    log_dir = os.environ.get("AGENT_CLAW_LOG_DIR", "logs").strip() or "logs"
+    return log_to_file, log_dir
+
+
 def _strip_optional_quotes(value: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
         return value[1:-1]

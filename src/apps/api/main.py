@@ -9,7 +9,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from agents.base import BaseAgent
-from apps.env import load_dotenv
+from apps.env import load_dotenv, resolve_api_logging
 from apps.api.dependencies import AgentCatalogEntry, get_agent_by_id, get_agent_catalog
 from apps.api.schemas import (
     AgentSummaryResponse,
@@ -23,7 +23,12 @@ from common.observability import bind_trace_id, logger, reset_trace_id, setup_lo
 
 def create_app() -> FastAPI:
     load_dotenv()
-    setup_loguru(service_name="agent-claw-api")
+    log_to_file, log_dir = resolve_api_logging()
+    setup_loguru(
+        service_name="agent-claw-api",
+        log_to_file=log_to_file,
+        log_dir=log_dir,
+    )
     app = FastAPI(title="agent-claw API")
 
     @app.middleware("http")
@@ -60,10 +65,28 @@ def create_app() -> FastAPI:
         try:
             final_answer = await agent.run(payload.user_input)
         except ValueError as exc:
+            logger.exception(
+                "API request failed path=/runs agent_id={} error_type={} detail={}",
+                payload.agent_id,
+                type(exc).__name__,
+                str(exc),
+            )
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except NotImplementedError as exc:
+            logger.exception(
+                "API request failed path=/runs agent_id={} error_type={} detail={}",
+                payload.agent_id,
+                type(exc).__name__,
+                str(exc),
+            )
             raise HTTPException(status_code=501, detail=str(exc)) from exc
         except RuntimeError as exc:
+            logger.exception(
+                "API request failed path=/runs agent_id={} error_type={} detail={}",
+                payload.agent_id,
+                type(exc).__name__,
+                str(exc),
+            )
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return RunResponse(agent_id=payload.agent_id, final_answer=final_answer)
 
@@ -80,10 +103,28 @@ def create_app() -> FastAPI:
         try:
             result = await agent.run_debug(payload.user_input)
         except ValueError as exc:
+            logger.exception(
+                "API request failed path=/runs/debug agent_id={} error_type={} detail={}",
+                payload.agent_id,
+                type(exc).__name__,
+                str(exc),
+            )
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except NotImplementedError as exc:
+            logger.exception(
+                "API request failed path=/runs/debug agent_id={} error_type={} detail={}",
+                payload.agent_id,
+                type(exc).__name__,
+                str(exc),
+            )
             raise HTTPException(status_code=501, detail=str(exc)) from exc
         except RuntimeError as exc:
+            logger.exception(
+                "API request failed path=/runs/debug agent_id={} error_type={} detail={}",
+                payload.agent_id,
+                type(exc).__name__,
+                str(exc),
+            )
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return DebugRunResponse.from_runtime_result(agent_id=payload.agent_id, result=result)
 
