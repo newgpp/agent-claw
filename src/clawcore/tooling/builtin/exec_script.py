@@ -12,7 +12,11 @@ class ExecScriptTool(BaseTool):
     """Execute a declared script relative to the active skill directory."""
 
     name = "exec_script"
-    description = "Execute a script declared by the active skill."
+    description = (
+        "Execute a declared script path from the active skill only. "
+        "Payload: {script:string, args?:list}. "
+        "The 'script' value must be a declared relative file path like scripts/foo.py, not a shell command."
+    )
     risk_level = "restricted"
 
     async def execute(self, payload: dict[str, object], context: ToolExecutionContext) -> str:

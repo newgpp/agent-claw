@@ -32,6 +32,10 @@ class RuntimeState:
     plan: ExecutionPlan | None = None
     # Active subgoal identifier for planned runs.
     active_subgoal_id: str | None = None
+    # Active subgoal task text for planned runs.
+    active_subgoal_task: str | None = None
+    # Active subgoal execution notes for planned runs.
+    active_subgoal_notes: str | None = None
     # Structured artifacts produced while working through a plan.
     artifacts: list[PlanArtifact] = field(default_factory=list)
     # Number of times the runtime has replanned during this run.

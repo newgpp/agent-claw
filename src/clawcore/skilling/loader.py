@@ -35,8 +35,11 @@ def _load_skill_from_directory(directory: Path) -> SkillDefinition | None:
     if not markdown_text:
         return None
 
-    name = str(metadata.get("name") or directory.name).strip()
-    description = str(metadata.get("description") or _extract_description(markdown_text)).strip()
+    frontmatter = _extract_frontmatter(markdown_text)
+    name = str(metadata.get("name") or frontmatter.get("name") or directory.name).strip()
+    description = str(
+        metadata.get("description") or frontmatter.get("description") or _extract_description(markdown_text)
+    ).strip()
     if not name or not description:
         return None
 
@@ -66,7 +69,8 @@ def _load_metadata(metadata_path: Path) -> dict[str, object]:
 
 
 def _extract_description(markdown_text: str) -> str:
-    for raw_line in markdown_text.splitlines():
+    content = _strip_frontmatter(markdown_text)
+    for raw_line in content.splitlines():
         line = raw_line.strip()
         if not line:
             continue
@@ -74,6 +78,37 @@ def _extract_description(markdown_text: str) -> str:
             continue
         return line
     return ""
+
+
+def _extract_frontmatter(markdown_text: str) -> dict[str, str]:
+    lines = markdown_text.splitlines()
+    if len(lines) < 3 or lines[0].strip() != "---":
+        return {}
+
+    metadata: dict[str, str] = {}
+    for line in lines[1:]:
+        stripped = line.strip()
+        if stripped == "---":
+            break
+        if ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        normalized_key = key.strip()
+        normalized_value = value.strip().strip('"').strip("'")
+        if normalized_key and normalized_value:
+            metadata[normalized_key] = normalized_value
+    return metadata
+
+
+def _strip_frontmatter(markdown_text: str) -> str:
+    lines = markdown_text.splitlines()
+    if len(lines) < 3 or lines[0].strip() != "---":
+        return markdown_text
+
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return "\n".join(lines[index + 1 :]).strip()
+    return markdown_text
 
 
 def _normalize_string_list(value: object) -> list[str]:

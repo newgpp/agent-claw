@@ -633,6 +633,37 @@ prepare_run()
   - end-to-end planned agent flow passes locally with mock backends
   - API debug payload is usable for manual inspection of planning behavior
 
+### PR 14 - Search and Email Agent Tools
+
+- Goal:
+  - add agent-owned tools for external research and message delivery so planned agents can complete realistic multi-step tasks
+- Scope:
+  - `src/agents/tools/tavily.py`
+  - `src/agents/tools/send_email.py`
+  - `tests/unit/agents/`
+  - `.env.example`
+  - optional example agent config updates
+- Deliverables:
+  - `tavily` agent tool for web search through Tavily API
+  - `send_email` agent tool for SMTP-based outbound email
+  - environment variable contract for both tools
+  - clear tool descriptions and payload validation
+  - deterministic unit tests with mocked network and SMTP backends
+- Unit test acceptance:
+  - Tavily tool validates required query input
+  - Tavily tool rejects missing API key configuration
+  - Tavily tool normalizes a successful search response
+  - send_email validates recipient, subject, and body inputs
+  - send_email rejects missing SMTP configuration
+  - send_email builds and sends a message through the configured SMTP backend
+  - factory auto-discovers both tools
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - tools are discoverable through existing JSON agent config wiring
+  - environment setup is documented clearly enough for local manual testing
+
 ## Testing Strategy
 
 ### Rules

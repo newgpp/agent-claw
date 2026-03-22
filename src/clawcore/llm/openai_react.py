@@ -31,6 +31,9 @@ Rules:
 - Prefer using the available skill summaries first.
 - If a skill seems relevant but you need its full procedure, call `read_skill` before downstream tools.
 - Do not call `read_skill` when the current context is already sufficient to answer.
+- Use `exec_script` only for declared script file paths such as `scripts/foo.py`.
+- Never pass shell commands like `curl ...` or `python ...` as the `script` value for `exec_script`.
+- If a skill summary recommends `curl` or shows `curl` command examples, call the `curl` tool directly instead of `exec_script`.
 """.strip()
 
 
@@ -101,6 +104,8 @@ class OpenAIReActLLM(BaseLLM):
             if state.plan is not None
             else None,
             "active_subgoal_id": state.active_subgoal_id,
+            "active_subgoal_task": state.active_subgoal_task,
+            "active_subgoal_notes": state.active_subgoal_notes,
             "artifacts": [
                 {"name": artifact.name, "kind": artifact.kind, "content": artifact.content}
                 for artifact in state.artifacts

@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from clawcore.llm import OpenAIReActConfig, OpenAIReActLLM
+from clawcore.models import ExecutionPlan, PlanStatus, PlanSubgoal
 from clawcore.runtime.session import AgentSession
 from clawcore.runtime.state import RuntimeState
 from clawcore.skilling.models import SkillDefinition
@@ -69,6 +70,37 @@ def build_session() -> AgentSession:
     return AgentSession(state=state)
 
 
+def build_planned_session() -> AgentSession:
+    skill = SkillDefinition(
+        name="weather",
+        description="Check the weather.",
+        directory=Path("/virtual/skills/weather"),
+        skill_file=Path("/virtual/skills/weather/SKILL.md"),
+    )
+    state = RuntimeState(
+        user_input="Check Tangshan weather and write an email",
+        system_prompt="Use the available tools carefully.",
+        available_skills=(skill,),
+        plan=ExecutionPlan(
+            goal="Check weather and send an email",
+            subgoals=[
+                PlanSubgoal(
+                    id="s1",
+                    task="Fetch Tangshan weather",
+                    status=PlanStatus.IN_PROGRESS,
+                    notes="Use the weather skill and curl, not exec_script.",
+                )
+            ],
+            success_criteria=["Weather fetched"],
+            status=PlanStatus.IN_PROGRESS,
+        ),
+        active_subgoal_id="s1",
+        active_subgoal_task="Fetch Tangshan weather",
+        active_subgoal_notes="Use the weather skill and curl, not exec_script.",
+    )
+    return AgentSession(state=state)
+
+
 def test_openai_react_llm_parses_action_response() -> None:
     client = FakeOpenAIClient(
         '{"thought":"Load the skill.","action":{"name":"read_skill","payload":{"skill":"file-summary"}},"final_answer":null}'
@@ -93,6 +125,7 @@ def test_openai_react_llm_parses_action_response() -> None:
         in request["messages"][0]["content"]
     )
     assert "If a skill seems relevant but you need its full procedure" in request["messages"][0]["content"]
+    assert "Never pass shell commands like `curl ...` or `python ...` as the `script` value" in request["messages"][0]["content"]
     assert '"active_skill": "file-summary"' in request["messages"][1]["content"]
     assert '"loaded_skills": ["file-summary"]' in request["messages"][1]["content"]
     assert '"scratchpad_observations": ["read: note contents"]' in request["messages"][1]["content"]
@@ -150,3 +183,18 @@ def test_openai_react_llm_logs_request_and_response(monkeypatch: pytest.MonkeyPa
         "LLM response model={} content={}",
         ("deepseek-chat", '{"thought":"I can answer now.","action":null,"final_answer":"done"}'),
     )
+
+
+def test_openai_react_llm_includes_active_subgoal_context() -> None:
+    client = FakeOpenAIClient('{"thought":"Use curl.","action":null,"final_answer":"done"}')
+    llm = OpenAIReActLLM(
+        OpenAIReActConfig(model="deepseek-chat", api_key="test-key"),
+        client=client,  # type: ignore[arg-type]
+    )
+
+    asyncio.run(llm.next_step(build_planned_session()))
+
+    request = client.chat.completions.calls[0]
+    assert '"active_subgoal_id": "s1"' in request["messages"][1]["content"]
+    assert '"active_subgoal_task": "Fetch Tangshan weather"' in request["messages"][1]["content"]
+    assert '"active_subgoal_notes": "Use the weather skill and curl, not exec_script."' in request["messages"][1]["content"]

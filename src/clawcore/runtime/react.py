@@ -158,6 +158,8 @@ class ReActRuntime:
             final_answer = ""
             for subgoal in plan.subgoals:
                 state.active_subgoal_id = subgoal.id
+                state.active_subgoal_task = subgoal.task
+                state.active_subgoal_notes = subgoal.notes
                 subgoal.status = PlanStatus.IN_PROGRESS
                 state.trace.record("subgoal.started", subgoal.task, subgoal_id=subgoal.id)
                 subgoal_answer = await self._run_subgoal_loop(
@@ -187,6 +189,8 @@ class ReActRuntime:
                 final_answer = subgoal_answer
 
             state.active_subgoal_id = None
+            state.active_subgoal_task = None
+            state.active_subgoal_notes = None
             state.plan.status = PlanStatus.COMPLETED
             finished = await self._emit_run_finished(run_context, state, final_answer=final_answer)
             logger.info("Finished planned runtime with {} subgoal(s)", len(plan.subgoals))
@@ -427,6 +431,8 @@ class ReActRuntime:
                 action_payload.get("skill", action_payload.get("skill_name", ""))
             ).strip(),
             "summary": self._summarize_skill_content(result_content, selected_skill),
+            "recommended_tools": self._extract_skill_recommended_tools(result_content, selected_skill),
+            "command_examples": self._extract_skill_command_examples(result_content),
             "call_hint": self._extract_skill_call_hint(result_content),
             "full_doc_available": True,
         }
@@ -447,7 +453,7 @@ class ReActRuntime:
             cleaned = line.strip()
             if not cleaned:
                 continue
-            if cleaned.startswith(("---", "#", "```", "- ", "* ")):
+            if cleaned.startswith(("---", "#", "```", "- ", "* ", "✅", "❌")):
                 continue
             if ":" in cleaned and len(cleaned.split()) <= 4:
                 continue
@@ -461,7 +467,44 @@ class ReActRuntime:
 
         return summaries[:limit]
 
+    def _extract_skill_recommended_tools(
+        self,
+        content: str,
+        skill: SkillDefinition | None,
+    ) -> list[str]:
+        tools: list[str] = []
+        if skill is not None:
+            for tool in skill.tools:
+                if tool not in tools:
+                    tools.append(tool)
+
+        for line in content.splitlines():
+            cleaned = line.strip()
+            if not cleaned:
+                continue
+            if cleaned.startswith(("curl ", "curl\"", "curl \"", "curl '")) and "curl" not in tools:
+                tools.append("curl")
+            if cleaned.startswith(("python ", "python3 ", "./")) and "exec_script" not in tools:
+                tools.append("exec_script")
+        return tools
+
+    def _extract_skill_command_examples(self, content: str, *, limit: int = 3) -> list[str]:
+        commands: list[str] = []
+        for raw_line in content.splitlines():
+            cleaned = raw_line.strip()
+            if not cleaned:
+                continue
+            if cleaned.startswith(("curl ", "curl\"", "curl \"", "curl '", "python ", "python3 ", "./")):
+                commands.append(cleaned)
+            if len(commands) >= limit:
+                break
+        return commands
+
     def _extract_skill_call_hint(self, content: str) -> str | None:
+        command_examples = self._extract_skill_command_examples(content, limit=1)
+        if command_examples:
+            return command_examples[0]
+
         for line in content.splitlines():
             cleaned = line.strip()
             if not cleaned:

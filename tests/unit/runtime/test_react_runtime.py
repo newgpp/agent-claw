@@ -234,6 +234,8 @@ def test_runtime_summarizes_read_skill_observation(tmp_path: Path) -> None:
     assert "read_skill_summary:" in result
     assert '"skill_name": "weather"' in result
     assert '"summary": ["Get current weather and forecasts for a location."' in result
+    assert '"recommended_tools": ["curl"]' in result
+    assert '"command_examples": ["curl \\"wttr.in/Hong+Kong?format=3\\""' in result
     assert '"call_hint": "curl \\"wttr.in/Hong+Kong?format=3\\""' in result
     assert "# Weather Skill" not in result
     assert "Always include a location in the weather query." in result
