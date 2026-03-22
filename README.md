@@ -190,8 +190,8 @@ The installer will:
 - preserve the skill's `scripts/` directory
 - generate a local `skill.json`
 
-Installed skills are meant to be local runtime assets and are ignored by git
-through `skills/` in `.gitignore`.
+Installed skills live under the repo-level `skills/` directory and can be
+reviewed, versioned, or customized alongside the rest of the project.
 
 ## Initial Goal
 
