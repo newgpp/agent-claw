@@ -676,6 +676,120 @@ prepare_run()
   - no user-visible behavior change for existing agents
   - planning routing logic is no longer embedded in the shared base agent
 
+### PR 16 - Planner-First Plan Contract
+
+- Goal:
+  - upgrade the planner contract so all requests can be represented as a normalized execution plan
+- Scope:
+  - `src/clawcore/models.py`
+  - `src/clawcore/llm/base.py`
+  - `src/clawcore/llm/mock.py`
+  - `src/clawcore/llm/openai_planner.py`
+  - planner unit tests
+- Deliverables:
+  - planner output contract that supports:
+    - `0` subgoals for direct-answer cases
+    - `1` subgoal for single-task execution
+    - `n` subgoals for multi-step execution
+  - planner guidance updated to avoid unnecessary decomposition for simple requests
+  - stable semantics for when `goal` alone is sufficient versus when subgoals must be emitted
+  - mock planner coverage for empty, single-step, and multi-step plans
+- Unit test acceptance:
+  - planner can parse empty-plan responses for direct answers
+  - planner can parse single-subgoal plans deterministically
+  - planner still parses multi-subgoal plans without regression
+  - invalid mixed outputs fail clearly
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - planner contract can express both simple and complex requests without a separate routing phase
+
+### PR 17 - Planner-First Runtime Entry
+
+- Goal:
+  - make plan generation the single entry path for execution while preserving correct handling of simple requests
+- Scope:
+  - `src/clawcore/runtime/react.py`
+  - `src/clawcore/runtime/session.py`
+  - `src/clawcore/runtime/prompt_builder.py`
+  - runtime unit and integration tests
+- Deliverables:
+  - unified planner-first runtime entry
+  - empty-plan handling that returns a direct answer from planner output
+  - single-subgoal handling that executes one task without requiring a separate direct runtime path
+  - multi-subgoal execution preserved through the planned runtime loop
+  - artifact and trace behavior aligned across empty, single-step, and multi-step runs
+- Unit test acceptance:
+  - simple requests can complete from an empty plan without entering a tool loop
+  - single-subgoal plans execute successfully through the shared runtime path
+  - multi-subgoal plans still execute correctly
+  - token usage and trace state remain deterministic across all three cases
+- Integration test need:
+  - yes
+- Integration dataset:
+  - extend `tests/fixtures/runtime/planned_cases.json`
+- cases:
+  - empty plan returns direct answer
+  - single-subgoal plan executes one tool flow
+  - multi-subgoal plan executes sequentially with artifacts
+- PR exit criteria:
+  - all unit tests pass
+  - planner-first entry works end-to-end for simple and complex requests
+  - no separate direct/planned branching is needed inside the runtime core
+
+### PR 18 - Remove Auto Routing and Collapse Execution Modes
+
+- Goal:
+  - remove the current direct-vs-planned routing model and collapse execution onto planner-first semantics
+- Scope:
+  - `src/agents/runtime_agent.py`
+  - `src/agents/planning_routing.py`
+  - `src/agents/factory.py`
+  - agent config parsing and unit tests
+- Deliverables:
+  - removal of `auto` routing heuristics from the main execution path
+  - updated planning config semantics, with `disabled` retained only if a planner-free mode is still required
+  - agent runtime wiring aligned to planner-first execution
+  - dead code cleanup for routing policy infrastructure if no longer needed
+- Unit test acceptance:
+  - agent execution no longer depends on heuristic routing for planner-enabled runs
+  - legacy configs fail clearly or migrate cleanly, depending on final compatibility choice
+  - runtime agent tests reflect the new planner-first behavior
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - planner-enabled agents no longer branch between separate direct and planned entry points
+  - obsolete routing code is removed or explicitly deprecated
+
+### PR 19 - Plan-First API and Demo Alignment
+
+- Goal:
+  - align API debug output, examples, and demo agents with the planner-first execution model
+- Scope:
+  - `src/apps/api/schemas.py`
+  - `configs/agents/`
+  - `README.md`
+  - `DEV_NOTES.md`
+  - integration tests
+- Deliverables:
+  - debug payload examples that reflect empty, single-subgoal, and multi-subgoal plans
+  - updated agent configs and docs to describe planner-first behavior
+  - demo coverage for a simple direct-answer request and a multi-step request under the same runtime model
+- Unit test acceptance:
+  - debug schema remains deterministic for planner-first runs
+  - direct-answer plan responses serialize clearly
+- Integration test need:
+  - yes
+- Integration dataset:
+  - `tests/fixtures/api/planner_first_cases.json`
+  - `tests/fixtures/agents/planner_first_agent_cases.json`
+- PR exit criteria:
+  - all unit tests pass
+  - end-to-end demos show planner-first behavior clearly
+  - documentation no longer describes the old dual-track mental model
+
 ## Testing Strategy
 
 ### Rules
