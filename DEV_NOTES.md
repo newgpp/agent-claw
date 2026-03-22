@@ -20,8 +20,8 @@ Use this section to record each PR in a lightweight format.
 
 ### Current
 
-- PR: 8-11, 13-14 partial
-- Title: Planning Runtime, Debug State, and Tooling Follow-ups
+- PR: 8-11, 13-15 partial
+- Title: Planning Runtime, Debug State, Tooling, and Routing Follow-ups
 - Branch: feat/planning-config-state -> main
 - Status: partially landed
 - Summary:
@@ -30,15 +30,16 @@ Use this section to record each PR in a lightweight format.
   - added a planner contract plus OpenAI-backed planner adapter
   - added the planned runtime execution loop on top of the existing direct ReAct runtime
   - expanded API debug state with `plan` and `token_usage`
-  - improved auto-routing heuristics and token usage tracking
+  - extracted planning routing into an injectable policy instead of shared base-agent heuristics
+  - improved token usage tracking
   - added research/email/weather agent tool flows and improved Open-Meteo location resolution
   - tracked repo-local `skills/` in version control to stabilize configured agent behavior
 - Tests:
   - `./.venv/bin/pytest`
 - Notes:
   - PR 8 through PR 11 are effectively landed on `main`
-  - PR 13 and PR 14 are partially represented by merged commits and follow-up changes on `main`
-  - PR 12 is not implemented yet: the runtime has `replanning_count` state, but there is no failure-triggered replanning loop
+  - PR 13 through PR 15 are represented by merged commits and follow-up changes on `main`
+  - unimplemented follow-up roadmap items were removed from this document before the next plan-first redesign branch
   - the implementation landed as a branch merge plus follow-up commits, not as one isolated PR per roadmap item
   - direct mode remains supported; planning is an additive capability selected by config and routing
 
@@ -587,43 +588,6 @@ prepare_run()
   - planned runtime integration cases pass locally
   - existing direct runtime fixtures remain green
 
-### PR 12 - Replanning and Failure Recovery
-
-- Goal:
-  - improve OOD robustness by letting the runtime inspect failures and revise the plan instead of exiting immediately
-- Scope:
-  - `clawcore/runtime/react.py`
-  - planner adapter module(s)
-  - runtime state tracking for retries and replans
-  - runtime integration tests
-- Deliverables:
-  - structured failure classification for:
-    - tool failure
-    - missing context
-    - blocked subgoal
-    - exhausted plan
-  - bounded replanning support
-  - configurable replan limit
-  - runtime observations that capture why replanning happened
-  - clearer failure messages for unrecoverable runs
-- Unit test acceptance:
-  - failed subgoals can trigger replanning when enabled
-  - replanning count is tracked correctly
-  - runtime stops after the configured replan limit
-  - unrecoverable failures still surface deterministically
-- Integration test need:
-  - yes
-- Integration dataset:
-  - extend `tests/fixtures/runtime/planned_cases.json`
-- cases:
-    - tool failure followed by successful replan
-    - missing context followed by inserted research step
-    - repeated failure hits replan limit
-- PR exit criteria:
-  - all unit tests pass
-  - replanning integration cases pass locally
-  - failure recovery does not regress existing direct-mode behavior
-
 ### PR 13 - Planned Agent Demo and API Debug Surface
 
 - Goal:
@@ -711,99 +675,6 @@ prepare_run()
   - all unit tests pass
   - no user-visible behavior change for existing agents
   - planning routing logic is no longer embedded in the shared base agent
-
-### PR 16 - Explicit Agent Assembly Resolvers
-
-- Goal:
-  - reduce platform coupling to the current repo layout by making agent assembly dependencies explicit
-- Scope:
-  - `src/agents/factory.py`
-  - resolver/helper modules under `src/agents/`
-  - factory unit tests
-- Deliverables:
-  - explicit resolver for skills source lookup
-  - explicit resolver for agent tool discovery
-  - explicit resolver for workspace directory defaults
-  - factory wiring updated to use resolvers instead of inline repo assumptions
-  - default resolver implementations that preserve the current project layout
-- Unit test acceptance:
-  - current JSON configs still build the same agents
-  - skill allowlist resolution remains deterministic
-  - tool auto-discovery remains deterministic
-  - workspace defaults remain backward compatible
-- Integration test need:
-  - not required
-- PR exit criteria:
-  - all unit tests pass
-  - factory behavior remains unchanged for the current repo
-  - repo-structure assumptions are isolated behind explicit resolver boundaries
-
-### PR 17 - Runtime-Specific API Debug Envelope
-
-- Goal:
-  - keep `/runs/debug` useful while reducing direct coupling between API schemas and one runtime implementation
-- Scope:
-  - `src/apps/api/schemas.py`
-  - API schema tests
-  - optional API docs updates
-- Deliverables:
-  - explicit runtime-specific debug section for planned execution details
-  - clearer separation between stable run response fields and runtime-internal debug state
-  - compatibility strategy for existing debug consumers
-- Unit test acceptance:
-  - debug responses still expose plan and artifact information for planned runs
-  - direct runs remain backward compatible or have a documented migration path
-  - schema serialization stays deterministic
-- Integration test need:
-  - not required
-- PR exit criteria:
-  - all unit tests pass
-  - `/runs/debug` remains usable for manual inspection
-  - API debug schemas are less tightly bound to the current runtime internals
-
-### PR 18 - Clarify Skill Capability Boundary
-
-- Goal:
-  - make the long-term role of `skills` and `read_skill` explicit so platform abstractions stop drifting
-- Scope:
-  - `src/clawcore/tooling/builtin/read_skill.py`
-  - skill-related architecture notes in `README.md` and `DEV_NOTES.md`
-  - targeted unit tests if behavior changes
-- Deliverables:
-  - explicit decision on whether `read_skill` is a core builtin or a document-skill adapter
-  - aligned documentation for the skill mental model
-  - any required code or naming cleanup to reflect the chosen boundary
-- Unit test acceptance:
-  - skill loading and `read_skill` behavior remain deterministic
-  - documentation and code terminology are aligned
-- Integration test need:
-  - not required
-- PR exit criteria:
-  - all unit tests pass
-  - the project has one clear, documented skill model
-  - platform and skill-layer responsibilities are easier to reason about
-
-### PR 19 - Provider-Neutral Runtime Wiring Prep
-
-- Goal:
-  - prepare the runtime-backed agent layer for future non-OpenAI providers without forcing a full provider expansion now
-- Scope:
-  - `src/agents/openai_runtime_agent.py`
-  - new runtime/LLM builder helper module(s)
-  - agent construction unit tests
-- Deliverables:
-  - explicit runtime builder boundary
-  - OpenAI wiring preserved as the default concrete implementation
-  - construction path that is easier to adapt for future provider-specific variants
-- Unit test acceptance:
-  - existing OpenAI-backed agents still build and run the same way
-  - runtime construction responsibilities are covered by deterministic tests
-- Integration test need:
-  - not required
-- PR exit criteria:
-  - all unit tests pass
-  - no regression for current OpenAI-backed flows
-  - app-level runtime wiring is less tightly coupled to one provider implementation
 
 ## Testing Strategy
 
