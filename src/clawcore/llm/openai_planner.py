@@ -7,7 +7,7 @@ from typing import Any
 
 from clawcore.llm.base import BasePlanner
 from clawcore.llm.openai_react import OpenAIReActConfig
-from clawcore.models import ExecutionPlan, PlanStatus, PlanSubgoal
+from clawcore.models import ExecutionPlan, PlanStatus, PlanSubgoal, TokenUsage
 from clawcore.runtime.session import AgentSession
 from common.observability import logger
 from openai import AsyncOpenAI
@@ -58,7 +58,14 @@ class OpenAIPlanner(BasePlanner):
         )
         response = await self._create_completion(messages)
         content = self._extract_content(response)
-        logger.info("Planner response model={} content={}", self.config.model, content)
+        usage = self._extract_usage(response)
+        session.state.token_usage.planner.add(usage)
+        logger.info(
+            "Planner response model={} usage={} content={}",
+            self.config.model,
+            self._dump_json_for_log(self._usage_to_payload(usage)),
+            content,
+        )
         return self._parse_plan(content)
 
     async def _create_completion(self, messages: list[dict[str, str]]) -> Any:
@@ -102,6 +109,23 @@ class OpenAIPlanner(BasePlanner):
         if not isinstance(content, str) or not content.strip():
             raise RuntimeError("OpenAI client returned an empty message content.")
         return content.strip()
+
+    def _extract_usage(self, response: Any) -> TokenUsage:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return TokenUsage()
+        return TokenUsage(
+            prompt_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+            completion_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
+            total_tokens=int(getattr(usage, "total_tokens", 0) or 0),
+        )
+
+    def _usage_to_payload(self, usage: TokenUsage) -> dict[str, int]:
+        return {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        }
 
     def _parse_plan(self, content: str) -> ExecutionPlan:
         try:

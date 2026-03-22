@@ -29,6 +29,11 @@ def test_debug_run_response_serializes_runtime_result_stably() -> None:
     assert dumped["plan"] is None
     assert dumped["artifacts"] == []
     assert dumped["replanning_count"] == 0
+    assert dumped["token_usage"] == {
+        "planner": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "executor": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "total": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
     assert dumped["events"][0]["event_type"] == "run.finished"
     assert dumped["trace"][0]["kind"] == "final_answer"
 
@@ -50,6 +55,12 @@ def test_debug_run_response_serializes_plan_state() -> None:
         artifacts=[PlanArtifact(name="weather_report", content="Hong Kong: 26C", kind="note")],
         replanning_count=1,
     )
+    state.token_usage.planner.prompt_tokens = 120
+    state.token_usage.planner.completion_tokens = 80
+    state.token_usage.planner.total_tokens = 200
+    state.token_usage.executor.prompt_tokens = 300
+    state.token_usage.executor.completion_tokens = 150
+    state.token_usage.executor.total_tokens = 450
 
     response = DebugRunResponse.from_runtime_result(
         agent_id="planner-agent",
@@ -63,3 +74,8 @@ def test_debug_run_response_serializes_plan_state() -> None:
     assert dumped["active_subgoal_id"] == "s2"
     assert dumped["artifacts"] == [{"name": "weather_report", "content": "Hong Kong: 26C", "kind": "note"}]
     assert dumped["replanning_count"] == 1
+    assert dumped["token_usage"] == {
+        "planner": {"prompt_tokens": 120, "completion_tokens": 80, "total_tokens": 200},
+        "executor": {"prompt_tokens": 300, "completion_tokens": 150, "total_tokens": 450},
+        "total": {"prompt_tokens": 420, "completion_tokens": 230, "total_tokens": 650},
+    }

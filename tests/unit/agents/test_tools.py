@@ -103,6 +103,30 @@ class FakeAsyncClient:
                         ]
                     }
                 )
+            if query == "唐山":
+                return FakeHTTPResponse(
+                    {
+                        "results": [
+                            {
+                                "name": "唐山",
+                                "country": "中国",
+                                "admin1": "河北",
+                                "latitude": 39.64381,
+                                "longitude": 118.18319,
+                                "feature_code": "PPLA2",
+                                "population": 3372102,
+                            },
+                            {
+                                "name": "唐山",
+                                "country": "中国",
+                                "admin1": "贵州",
+                                "latitude": 25.93,
+                                "longitude": 104.68,
+                                "feature_code": "PPL",
+                            }
+                        ]
+                    }
+                )
             return FakeHTTPResponse(
                 {
                     "results": [
@@ -230,6 +254,7 @@ def test_open_meteo_returns_normalized_weather(monkeypatch: pytest.MonkeyPatch) 
 
     assert payload["location"]["name"] == "Tangshan"
     assert payload["location"]["country"] == "China"
+    assert payload["location"]["admin1"] == "Hebei"
     assert payload["current"]["temperature_2m"] == 14.2
     assert payload["daily"]["temperature_2m_max"] == [18.1]
 
@@ -261,6 +286,25 @@ def test_open_meteo_falls_back_from_comma_separated_query(monkeypatch: pytest.Mo
 
     assert payload["location"]["name"] == "北京市"
     assert any(call[1].get("name") == "Beijing" for call in FakeAsyncClient.calls if "geocoding-api.open-meteo.com" in call[0])
+
+
+def test_open_meteo_falls_back_from_specific_chinese_location(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("agents.tools.open_meteo.httpx.AsyncClient", FakeAsyncClient)
+    FakeAsyncClient.calls.clear()
+
+    result = asyncio.run(
+        OpenMeteoTool().execute({"location": "唐山市, 河北, 中国", "days": 1}, ToolExecutionContext())
+    )
+
+    payload = json.loads(result)
+
+    assert payload["location"]["name"] == "唐山"
+    assert payload["location"]["admin1"] == "河北"
+    queried_names = [call[1].get("name") for call in FakeAsyncClient.calls if "geocoding-api.open-meteo.com" in call[0]]
+    assert "唐山市, 河北, 中国" in queried_names
+    assert "唐山市" in queried_names
+    assert "唐山" in queried_names
+
 
 
 def test_send_email_requires_smtp_config(monkeypatch: pytest.MonkeyPatch) -> None:

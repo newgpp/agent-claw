@@ -23,8 +23,24 @@ class FakeChoice:
 
 
 class FakeResponse:
-    def __init__(self, content: str) -> None:
+    def __init__(
+        self,
+        content: str,
+        *,
+        prompt_tokens: int = 13,
+        completion_tokens: int = 9,
+        total_tokens: int = 22,
+    ) -> None:
         self.choices = [FakeChoice(content)]
+        self.usage = type(
+            "FakeUsage",
+            (),
+            {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            },
+        )()
 
 
 class FakeCompletions:
@@ -154,9 +170,27 @@ def test_openai_planner_logs_request_and_response(monkeypatch: pytest.MonkeyPatc
     assert records[0][1][0] == "deepseek-chat"
     assert "Write an email based on today's weather" in str(records[0][1][1])
     assert records[1] == (
-        "Planner response model={} content={}",
+        "Planner response model={} usage={} content={}",
         (
             "deepseek-chat",
+            '{"completion_tokens": 9, "prompt_tokens": 13, "total_tokens": 22}',
             '{"goal":"Write and send a weather email","subgoals":[],"success_criteria":[],"assumptions":[]}',
         ),
     )
+
+
+def test_openai_planner_accumulates_token_usage_in_state() -> None:
+    client = FakeOpenAIClient(
+        '{"goal":"Write and send a weather email","subgoals":[],"success_criteria":[],"assumptions":[]}'
+    )
+    planner = OpenAIPlanner(
+        OpenAIReActConfig(model="deepseek-chat", api_key="test-key"),
+        client=client,  # type: ignore[arg-type]
+    )
+    session = build_session()
+
+    asyncio.run(planner.create_plan(session))
+
+    assert session.state.token_usage.planner.prompt_tokens == 13
+    assert session.state.token_usage.planner.completion_tokens == 9
+    assert session.state.token_usage.planner.total_tokens == 22

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from clawcore.models import ExecutionPlan, PlanArtifact, ToolResult
+from clawcore.models import ExecutionPlan, PlanArtifact, RuntimeTokenUsage, ToolResult
 from clawcore.skilling.models import SkillDefinition
 from common.events import RuntimeEvent
 from common.tracing import TraceCollector
@@ -40,6 +40,8 @@ class RuntimeState:
     artifacts: list[PlanArtifact] = field(default_factory=list)
     # Number of times the runtime has replanned during this run.
     replanning_count: int = 0
+    # Aggregate token usage across planner and executor LLM calls.
+    token_usage: RuntimeTokenUsage = field(default_factory=RuntimeTokenUsage)
     # Lifecycle and tool events recorded for tracing, hooks, and debugging rather than model reasoning.
     events: list[RuntimeEvent] = field(default_factory=list)
     # Ordered trace collector for debugging and observability.

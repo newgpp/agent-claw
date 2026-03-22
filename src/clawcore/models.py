@@ -22,6 +22,37 @@ class ToolResult:
     content: str
 
 
+@dataclass(slots=True)
+class TokenUsage:
+    """Token usage for one or more LLM calls."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+    def add(self, other: "TokenUsage") -> None:
+        """Accumulate another usage record into this instance."""
+        self.prompt_tokens += other.prompt_tokens
+        self.completion_tokens += other.completion_tokens
+        self.total_tokens += other.total_tokens
+
+
+@dataclass(slots=True)
+class RuntimeTokenUsage:
+    """Aggregate token usage across planner and executor calls."""
+
+    planner: TokenUsage = field(default_factory=TokenUsage)
+    executor: TokenUsage = field(default_factory=TokenUsage)
+
+    @property
+    def total(self) -> TokenUsage:
+        return TokenUsage(
+            prompt_tokens=self.planner.prompt_tokens + self.executor.prompt_tokens,
+            completion_tokens=self.planner.completion_tokens + self.executor.completion_tokens,
+            total_tokens=self.planner.total_tokens + self.executor.total_tokens,
+        )
+
+
 class PlanStatus(StrEnum):
     """Lifecycle status for a task plan."""
 

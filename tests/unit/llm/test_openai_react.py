@@ -22,8 +22,24 @@ class FakeChoice:
 
 
 class FakeResponse:
-    def __init__(self, content: str) -> None:
+    def __init__(
+        self,
+        content: str,
+        *,
+        prompt_tokens: int = 11,
+        completion_tokens: int = 7,
+        total_tokens: int = 18,
+    ) -> None:
         self.choices = [FakeChoice(content)]
+        self.usage = type(
+            "FakeUsage",
+            (),
+            {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            },
+        )()
 
 
 class FakeCompletions:
@@ -180,9 +196,28 @@ def test_openai_react_llm_logs_request_and_response(monkeypatch: pytest.MonkeyPa
     assert records[0][1][0] == "deepseek-chat"
     assert "Summarize note.txt" in str(records[0][1][1])
     assert records[1] == (
-        "LLM response model={} content={}",
-        ("deepseek-chat", '{"thought":"I can answer now.","action":null,"final_answer":"done"}'),
+        "LLM response model={} usage={} content={}",
+        (
+            "deepseek-chat",
+            '{"completion_tokens": 7, "prompt_tokens": 11, "total_tokens": 18}',
+            '{"thought":"I can answer now.","action":null,"final_answer":"done"}',
+        ),
     )
+
+
+def test_openai_react_llm_accumulates_token_usage_in_state() -> None:
+    client = FakeOpenAIClient('{"thought":"I can answer now.","action":null,"final_answer":"done"}')
+    llm = OpenAIReActLLM(
+        OpenAIReActConfig(model="deepseek-chat", api_key="test-key"),
+        client=client,  # type: ignore[arg-type]
+    )
+    session = build_session()
+
+    asyncio.run(llm.next_step(session))
+
+    assert session.state.token_usage.executor.prompt_tokens == 11
+    assert session.state.token_usage.executor.completion_tokens == 7
+    assert session.state.token_usage.executor.total_tokens == 18
 
 
 def test_openai_react_llm_includes_active_subgoal_context() -> None:

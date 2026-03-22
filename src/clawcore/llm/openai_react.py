@@ -9,7 +9,7 @@ from typing import Any
 from openai import AsyncOpenAI
 
 from clawcore.llm.base import BaseLLM
-from clawcore.models import ReActStep, ToolCall
+from clawcore.models import ReActStep, TokenUsage, ToolCall
 from clawcore.runtime.session import AgentSession
 from common.observability import logger
 
@@ -65,7 +65,14 @@ class OpenAIReActLLM(BaseLLM):
         )
         response = await self._create_completion(messages)
         content = self._extract_content(response)
-        logger.info("LLM response model={} content={}", self.config.model, content)
+        usage = self._extract_usage(response)
+        session.state.token_usage.executor.add(usage)
+        logger.info(
+            "LLM response model={} usage={} content={}",
+            self.config.model,
+            self._dump_json_for_log(self._usage_to_payload(usage)),
+            content,
+        )
         return self._parse_step(content)
 
     async def _create_completion(self, messages: list[dict[str, str]]) -> Any:
@@ -132,6 +139,23 @@ class OpenAIReActLLM(BaseLLM):
         if not isinstance(content, str) or not content.strip():
             raise RuntimeError("OpenAI client returned an empty message content.")
         return content.strip()
+
+    def _extract_usage(self, response: Any) -> TokenUsage:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return TokenUsage()
+        return TokenUsage(
+            prompt_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+            completion_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
+            total_tokens=int(getattr(usage, "total_tokens", 0) or 0),
+        )
+
+    def _usage_to_payload(self, usage: TokenUsage) -> dict[str, int]:
+        return {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        }
 
     def _parse_step(self, content: str) -> ReActStep:
         try:

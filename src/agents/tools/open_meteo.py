@@ -16,7 +16,10 @@ class OpenMeteoTool(BaseTool):
     name = "open_meteo"
     description = (
         "Fetch current weather using Open-Meteo. "
-        "Payload: {location:string, days?:int}."
+        "Payload: {location:string, days?:int}. "
+        "Always prefer a specific location such as '唐山市, 河北, 中国' or "
+        "'Tangshan, Hebei, China' when the place name may be ambiguous. "
+        "Do not guess provinces or countries in code; pass the most specific location available."
     )
 
     async def execute(self, payload: dict[str, object], context: ToolExecutionContext) -> str:
@@ -96,6 +99,17 @@ class OpenMeteoTool(BaseTool):
         add(location.split("，", 1)[0])
 
         primary = candidates[0] if candidates else location
+        for candidate in list(candidates):
+            if not self._contains_cjk(candidate):
+                continue
+            stripped = candidate
+            for suffix in ("市", "区", "县"):
+                if stripped.endswith(suffix):
+                    add(stripped.removesuffix(suffix))
+                    break
+            else:
+                add(f"{stripped}市")
+
         if self._contains_cjk(primary) and not primary.endswith(("市", "区", "县")):
             add(f"{primary}市")
 
