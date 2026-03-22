@@ -12,13 +12,15 @@ from agents.openai_runtime_agent import (
     OpenAIRuntimeAgentOptions,
     load_openai_react_config_from_env,
 )
-from agents.runtime_agent import AgentRunConfig, RuntimeAgent
+from agents.runtime_agent import AgentRunConfig, PlanningConfig, PlanningMode, RuntimeAgent
 
 __all__ = [
     "AgentRunConfig",
     "OpenAIRuntimeAgentSpec",
     "OpenAIRuntimeAgent",
     "OpenAIRuntimeAgentOptions",
+    "PlanningConfig",
+    "PlanningMode",
     "RuntimeAgent",
     "build_agent",
     "clear_agent_cache",

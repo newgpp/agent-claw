@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from apps.api.dependencies import AgentCatalogEntry
+from clawcore.models import ExecutionPlan, PlanArtifact, PlanStatus, PlanSubgoal
 from clawcore.runtime import RuntimeRunResult
 
 
@@ -43,11 +44,59 @@ class ToolResultResponse(BaseModel):
     content: str
 
 
+class PlanSubgoalResponse(BaseModel):
+    id: str
+    task: str
+    status: PlanStatus
+    notes: str
+
+    @classmethod
+    def from_model(cls, subgoal: PlanSubgoal) -> "PlanSubgoalResponse":
+        return cls(
+            id=subgoal.id,
+            task=subgoal.task,
+            status=subgoal.status,
+            notes=subgoal.notes,
+        )
+
+
+class PlanArtifactResponse(BaseModel):
+    name: str
+    content: str
+    kind: str
+
+    @classmethod
+    def from_model(cls, artifact: PlanArtifact) -> "PlanArtifactResponse":
+        return cls(name=artifact.name, content=artifact.content, kind=artifact.kind)
+
+
+class PlanResponse(BaseModel):
+    goal: str
+    subgoals: list[PlanSubgoalResponse]
+    success_criteria: list[str]
+    assumptions: list[str]
+    status: PlanStatus
+
+    @classmethod
+    def from_model(cls, plan: ExecutionPlan) -> "PlanResponse":
+        return cls(
+            goal=plan.goal,
+            subgoals=[PlanSubgoalResponse.from_model(item) for item in plan.subgoals],
+            success_criteria=list(plan.success_criteria),
+            assumptions=list(plan.assumptions),
+            status=plan.status,
+        )
+
+
 class DebugRunResponse(BaseModel):
     agent_id: str
     final_answer: str
     scratchpad: list[str]
     tool_results: list[ToolResultResponse]
+    plan: PlanResponse | None = None
+    active_subgoal_id: str | None = None
+    artifacts: list[PlanArtifactResponse] = Field(default_factory=list)
+    replanning_count: int = 0
     events: list[dict[str, object]]
     trace: list[dict[str, object]]
 
@@ -61,6 +110,10 @@ class DebugRunResponse(BaseModel):
                 ToolResultResponse(name=item.name, content=item.content)
                 for item in result.state.tool_results
             ],
+            plan=PlanResponse.from_model(result.state.plan) if result.state.plan is not None else None,
+            active_subgoal_id=result.state.active_subgoal_id,
+            artifacts=[PlanArtifactResponse.from_model(item) for item in result.state.artifacts],
+            replanning_count=result.state.replanning_count,
             events=[event.to_dict() for event in result.state.events],
             trace=[entry.to_dict() for entry in result.state.trace.events],
         )

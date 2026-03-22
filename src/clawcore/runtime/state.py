@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from clawcore.models import ToolResult
+from clawcore.models import ExecutionPlan, PlanArtifact, ToolResult
 from clawcore.skilling.models import SkillDefinition
 from common.events import RuntimeEvent
 from common.tracing import TraceCollector
@@ -28,6 +28,14 @@ class RuntimeState:
     scratchpad: list[str] = field(default_factory=list)
     # Structured results returned by executed tools.
     tool_results: list[ToolResult] = field(default_factory=list)
+    # Structured execution plan for planned runs, if one exists.
+    plan: ExecutionPlan | None = None
+    # Active subgoal identifier for planned runs.
+    active_subgoal_id: str | None = None
+    # Structured artifacts produced while working through a plan.
+    artifacts: list[PlanArtifact] = field(default_factory=list)
+    # Number of times the runtime has replanned during this run.
+    replanning_count: int = 0
     # Lifecycle and tool events recorded for tracing, hooks, and debugging rather than model reasoning.
     events: list[RuntimeEvent] = field(default_factory=list)
     # Ordered trace collector for debugging and observability.

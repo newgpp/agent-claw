@@ -3,11 +3,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 
 from agents.base import AgentDescriptor, BaseAgent
 from clawcore.runtime import ReActRuntime, RuntimeRunResult
 from clawcore.skilling.models import SkillDefinition
+
+
+class PlanningMode(StrEnum):
+    """Planning strategy for a runtime-backed agent."""
+
+    DISABLED = "disabled"
+    AUTO = "auto"
+    ALWAYS = "always"
+
+
+@dataclass(frozen=True, slots=True)
+class PlanningConfig:
+    """Configuration for direct vs planned execution."""
+
+    mode: PlanningMode = PlanningMode.DISABLED
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +35,7 @@ class AgentRunConfig:
     active_skill: SkillDefinition | None = None
     max_steps: int = 5
     workspace_dir: Path | None = None
+    planning: PlanningConfig = field(default_factory=PlanningConfig)
 
 
 class RuntimeAgent(BaseAgent):
@@ -32,7 +49,8 @@ class RuntimeAgent(BaseAgent):
 
     async def run(self, user_input: str, *, workspace_dir: Path | None = None) -> str:
         resolved_workspace = workspace_dir or self.config.workspace_dir
-        return await self.runtime.run(
+        runner = self._resolve_runner("run")
+        return await runner(
             user_input,
             skills=list(self.config.skills),
             active_skill=self.config.active_skill,
@@ -45,7 +63,8 @@ class RuntimeAgent(BaseAgent):
         self, user_input: str, *, workspace_dir: Path | None = None
     ) -> RuntimeRunResult:
         resolved_workspace = workspace_dir or self.config.workspace_dir
-        return await self.runtime.run_debug(
+        runner = self._resolve_runner("run_debug")
+        return await runner(
             user_input,
             skills=list(self.config.skills),
             active_skill=self.config.active_skill,
@@ -53,3 +72,16 @@ class RuntimeAgent(BaseAgent):
             base_instructions=self.config.base_instructions,
             workspace_dir=resolved_workspace,
         )
+
+    def _resolve_runner(self, method_name: str):
+        if self.config.planning.mode == PlanningMode.DISABLED:
+            return getattr(self.runtime, method_name)
+
+        planned_method_name = f"{method_name}_planned"
+        planned_runner = getattr(self.runtime, planned_method_name, None)
+        if planned_runner is None:
+            raise NotImplementedError(
+                f"Planning mode '{self.config.planning.mode}' requires runtime method "
+                f"'{planned_method_name}()'."
+            )
+        return planned_runner

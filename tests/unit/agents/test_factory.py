@@ -9,6 +9,7 @@ from agents.factory import (
     get_agent,
     load_agent_spec,
 )
+from agents.runtime_agent import PlanningConfig, PlanningMode
 
 
 def test_load_agent_spec_reads_valid_json_fixture() -> None:
@@ -26,6 +27,7 @@ def test_load_agent_spec_reads_valid_json_fixture() -> None:
         base_url="http://localhost:1234/v1",
         temperature=0.2,
         max_tokens=256,
+        planning=PlanningConfig(mode=PlanningMode.DISABLED),
         metadata={},
     )
 
@@ -129,3 +131,43 @@ def test_build_agent_defaults_workspace_to_project_works_dir(monkeypatch: pytest
     agent = build_agent(spec, config_path=config_path)
 
     assert agent.config.workspace_dir == Path("tests/fixtures/works/openai_runtime_basic").resolve()
+
+
+def test_load_agent_spec_parses_planning_mode() -> None:
+    spec = load_agent_spec(Path("tests/fixtures/agents/openai_runtime_basic.json"))
+
+    assert spec.planning.mode == PlanningMode.DISABLED
+
+
+def test_load_agent_spec_accepts_legacy_plan_enabled(tmp_path: Path) -> None:
+    config_path = tmp_path / "agent.json"
+    config_path.write_text(
+        '{"type":"openai-runtime","model":"gpt-test","plan_enabled":true}',
+        encoding="utf-8",
+    )
+
+    spec = load_agent_spec(config_path)
+
+    assert spec.planning.mode == PlanningMode.AUTO
+
+
+def test_load_agent_spec_rejects_invalid_planning_mode(tmp_path: Path) -> None:
+    config_path = tmp_path / "agent.json"
+    config_path.write_text(
+        '{"type":"openai-runtime","model":"gpt-test","planning":{"mode":"sometimes"}}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="planning.mode"):
+        load_agent_spec(config_path)
+
+
+def test_load_agent_spec_rejects_planning_and_plan_enabled_together(tmp_path: Path) -> None:
+    config_path = tmp_path / "agent.json"
+    config_path.write_text(
+        '{"type":"openai-runtime","model":"gpt-test","plan_enabled":true,"planning":{"mode":"always"}}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Use either 'planning' or legacy 'plan_enabled'"):
+        load_agent_spec(config_path)
