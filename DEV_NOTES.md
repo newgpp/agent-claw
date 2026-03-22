@@ -20,6 +20,30 @@ Use this section to record each PR in a lightweight format.
 
 ### Current
 
+- PR: 8-11, 13-14 partial
+- Title: Planning Runtime, Debug State, and Tooling Follow-ups
+- Branch: feat/planning-config-state -> main
+- Status: partially landed
+- Summary:
+  - added planning config support with `disabled`, `auto`, and `always` routing modes
+  - added structured plan and subgoal runtime state for planned execution
+  - added a planner contract plus OpenAI-backed planner adapter
+  - added the planned runtime execution loop on top of the existing direct ReAct runtime
+  - expanded API debug state with `plan` and `token_usage`
+  - improved auto-routing heuristics and token usage tracking
+  - added research/email/weather agent tool flows and improved Open-Meteo location resolution
+  - tracked repo-local `skills/` in version control to stabilize configured agent behavior
+- Tests:
+  - `./.venv/bin/pytest`
+- Notes:
+  - PR 8 through PR 11 are effectively landed on `main`
+  - PR 13 and PR 14 are partially represented by merged commits and follow-up changes on `main`
+  - PR 12 is not implemented yet: the runtime has `replanning_count` state, but there is no failure-triggered replanning loop
+  - the implementation landed as a branch merge plus follow-up commits, not as one isolated PR per roadmap item
+  - direct mode remains supported; planning is an additive capability selected by config and routing
+
+### Previous
+
 - PR: 7
 - Title: FastAPI API Layer
 - Branch: main
