@@ -43,3 +43,16 @@ def test_runtime_state_can_hold_structured_plan_data() -> None:
     assert state.active_subgoal_notes == "Use the weather artifact as context."
     assert state.artifacts == [artifact]
     assert state.replanning_count == 1
+
+
+def test_execution_plan_shape_helpers_cover_direct_and_single_step_cases() -> None:
+    direct_plan = ExecutionPlan(goal="Answer directly")
+    single_step_plan = ExecutionPlan(
+        goal="Fetch the weather",
+        subgoals=[PlanSubgoal(id="s1", task="Read weather data")],
+    )
+
+    assert direct_plan.is_direct_answer
+    assert not direct_plan.is_single_step
+    assert not single_step_plan.is_direct_answer
+    assert single_step_plan.is_single_step

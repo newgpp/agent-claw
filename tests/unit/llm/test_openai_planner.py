@@ -116,9 +116,44 @@ def test_openai_planner_parses_plan_response() -> None:
     assert request["model"] == "deepseek-chat"
     assert request["messages"][0]["role"] == "system"
     assert "Planning policy:" in request["messages"][0]["content"]
-    assert "Create subgoals only when the task needs multiple dependent steps." in request["messages"][0]["content"]
+    assert "subgoals: []" in request["messages"][0]["content"]
+    assert "exactly one subgoal" in request["messages"][0]["content"]
     assert '"active_skill": "weather"' in request["messages"][1]["content"]
     assert '"scratchpad_observations": ["weather report: Hong Kong 26C"]' in request["messages"][1]["content"]
+
+
+def test_openai_planner_parses_direct_answer_plan() -> None:
+    client = FakeOpenAIClient(
+        '{"goal":"Hong Kong is 26C today.","subgoals":[],"success_criteria":["Answer the user directly"],"assumptions":[]}'
+    )
+    planner = OpenAIPlanner(
+        OpenAIReActConfig(model="deepseek-chat", api_key="test-key", base_url="http://localhost"),
+        client=client,  # type: ignore[arg-type]
+    )
+
+    plan = asyncio.run(planner.create_plan(build_session()))
+
+    assert plan.goal == "Hong Kong is 26C today."
+    assert plan.subgoals == []
+    assert plan.is_direct_answer
+    assert not plan.is_single_step
+
+
+def test_openai_planner_parses_single_subgoal_plan() -> None:
+    client = FakeOpenAIClient(
+        '{"goal":"Fetch the current weather.","subgoals":[{"id":"s1","task":"Read the local weather file","notes":"Use the read tool."}],"success_criteria":["Weather data is available"],"assumptions":[]}'
+    )
+    planner = OpenAIPlanner(
+        OpenAIReActConfig(model="deepseek-chat", api_key="test-key", base_url="http://localhost"),
+        client=client,  # type: ignore[arg-type]
+    )
+
+    plan = asyncio.run(planner.create_plan(build_session()))
+
+    assert plan.goal == "Fetch the current weather."
+    assert [subgoal.id for subgoal in plan.subgoals] == ["s1"]
+    assert not plan.is_direct_answer
+    assert plan.is_single_step
 
 
 def test_openai_planner_rejects_invalid_json() -> None:

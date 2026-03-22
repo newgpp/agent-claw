@@ -29,10 +29,15 @@ Return exactly one JSON object with this schema:
 }
 Rules:
 - Return valid JSON only. Do not wrap it in markdown fences.
-- Create subgoals only when the task needs multiple dependent steps.
+- The plan must support three shapes:
+  - `subgoals: []` when the request can be answered directly without tool execution.
+  - exactly one subgoal when the request needs one executable task.
+  - multiple subgoals only when the task truly needs dependent steps.
+- Prefer fewer subgoals. Do not decompose simple requests into multiple steps.
 - Keep subgoals concrete and execution-oriented.
 - Use stable short ids like "s1", "s2", "s3".
 - Do not include statuses in the JSON; the runtime owns execution status.
+- If `subgoals` is empty, set `goal` to the user-facing direct answer.
 - Prefer an empty assumptions list over speculative assumptions.
 """.strip()
 

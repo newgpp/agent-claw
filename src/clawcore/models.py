@@ -92,6 +92,16 @@ class ExecutionPlan:
     assumptions: list[str] = field(default_factory=list)
     status: PlanStatus = PlanStatus.PENDING
 
+    @property
+    def is_direct_answer(self) -> bool:
+        """Return True when the planner can answer without entering the execution loop."""
+        return not self.subgoals
+
+    @property
+    def is_single_step(self) -> bool:
+        """Return True when the plan contains exactly one executable subgoal."""
+        return len(self.subgoals) == 1
+
 
 @dataclass(slots=True)
 class ReActStep:
