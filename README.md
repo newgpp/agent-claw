@@ -8,6 +8,18 @@ Python agent framework with a ReAct runtime, reusable skills/tools, and API-faci
 - `clawcore`: runtime loop, planner/LLM adapters, and tool execution
 - `agents`: business-facing agents built on top of `clawcore`
 
+## 设计亮点
+
+- 规划器支持 `0 / 1 / n` 三种输出形态，可以直接回答、执行单步任务，或拆成多子目标顺序执行。
+- planner-first 模式下，运行时只暴露当前 `active_subgoal` 作为可执行边界，用户原始请求保留为背景约束，不再驱动越界执行。
+- executor 看到的是压缩后的上下文，而不是完整原始历史；重点保留 `plan_summary`、`step_summaries`、精简 observation、artifacts 和缓存文件内容。
+- 运行时同时维护 `prompt_state` 和 `debug_state`：前者服务模型输入控 token，后者保留原始 scratchpad、tool results、events 和 trace 便于排查。
+- 成功的 `write` 会把内容写入 `file_cache`，后续子目标可以直接复用，避免重复 `read` 文件。
+- 对简单单工具子目标支持 fast-path completion，运行时可直接收口，不必额外再花一轮 LLM 去确认成功。
+- Tavily 长结果在回灌给 executor 前会先做摘要，既保留调试信息，也显著降低 prompt token 消耗。
+
+### 运行流程图
+
 ```mermaid
 flowchart TD
     A[User Input] --> B[Agent Config<br/>tools + skills + base_instructions + planning.mode]
@@ -22,22 +34,31 @@ flowchart TD
     G -->|no| I[Select Tool]
     H --> I
     I --> J[Tool Execution]
-    J --> K[Observation -> Scratchpad]
-    K --> F
-    F -->|final_answer| L[Response]
+    J --> K[Raw Observation -> debug_state]
+    K --> L[Compact prompt_state]
+    L --> F
+    F -->|final_answer| X[Response]
 
     E --> M[Planner]
     M --> N[Execution Plan<br/>0 / 1 / n subgoals]
     N --> O{Plan shape}
 
-    O -->|0 subgoals| L
-    O -->|1 subgoal| P[Execute One Task via ReAct]
-    O -->|n subgoals| Q[Execute Subgoals Sequentially]
+    O -->|0 subgoals| X
+    O -->|1 subgoal| P[Execute Active Subgoal]
+    O -->|n subgoals| Q[Execute Active Subgoal<br/>with sequential handoff]
 
-    P --> R[Artifact / Final Answer]
+    P --> R[Active Subgoal Context<br/>active_subgoal + plan_summary + step_summaries]
     Q --> R
-    R --> L
+    R --> S[Tool Execution]
+    S --> T{Simple subgoal?}
+    T -->|yes| U[Fast-path completion]
+    T -->|no| V[LLM confirms handoff]
+    U --> W[Artifacts / file_cache / final_answer]
+    V --> W
+    W --> X
 ```
+
+### 模块关系图
 
 ```mermaid
 flowchart LR
@@ -142,8 +163,15 @@ Endpoints:
 - `POST /runs`
 - `POST /runs/debug`
 
-`/runs/debug` returns the final answer plus runtime state such as `scratchpad`,
-`tool_results`, `plan`, `artifacts`, `events`, `trace`, and `token_usage`.
+`/runs/debug` returns the final answer plus both compact and full-fidelity runtime
+state:
+
+- `prompt_state`: the compact executor-facing state, including the current plan,
+  active subgoal, prompt observations, and artifacts
+- `debug_state`: raw `scratchpad`, `tool_results`, `events`, `trace`, and other
+  debugging details
+- `plan`, `artifacts`, and `token_usage`: normalized top-level views for API
+  consumers
 
 Example:
 
