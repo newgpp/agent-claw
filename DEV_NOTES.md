@@ -688,6 +688,123 @@ prepare_run()
   - tools are discoverable through existing JSON agent config wiring
   - environment setup is documented clearly enough for local manual testing
 
+### PR 15 - Extract Planning Routing Policy
+
+- Goal:
+  - remove domain-specific planning heuristics from the shared `RuntimeAgent` base class
+- Scope:
+  - `src/agents/runtime_agent.py`
+  - new routing policy module(s) under `src/agents/`
+  - runtime agent unit tests
+- Deliverables:
+  - explicit planning routing policy interface
+  - default routing policy that preserves current `auto` behavior
+  - `RuntimeAgent` updated to depend on a routing policy rather than hard-coded heuristics
+  - clear extension point for future config-driven or model-driven routing
+- Unit test acceptance:
+  - `disabled`, `auto`, and `always` modes retain existing behavior
+  - default routing policy preserves current multi-step detection behavior
+  - custom routing policies can be injected without changing `RuntimeAgent`
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - no user-visible behavior change for existing agents
+  - planning routing logic is no longer embedded in the shared base agent
+
+### PR 16 - Explicit Agent Assembly Resolvers
+
+- Goal:
+  - reduce platform coupling to the current repo layout by making agent assembly dependencies explicit
+- Scope:
+  - `src/agents/factory.py`
+  - resolver/helper modules under `src/agents/`
+  - factory unit tests
+- Deliverables:
+  - explicit resolver for skills source lookup
+  - explicit resolver for agent tool discovery
+  - explicit resolver for workspace directory defaults
+  - factory wiring updated to use resolvers instead of inline repo assumptions
+  - default resolver implementations that preserve the current project layout
+- Unit test acceptance:
+  - current JSON configs still build the same agents
+  - skill allowlist resolution remains deterministic
+  - tool auto-discovery remains deterministic
+  - workspace defaults remain backward compatible
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - factory behavior remains unchanged for the current repo
+  - repo-structure assumptions are isolated behind explicit resolver boundaries
+
+### PR 17 - Runtime-Specific API Debug Envelope
+
+- Goal:
+  - keep `/runs/debug` useful while reducing direct coupling between API schemas and one runtime implementation
+- Scope:
+  - `src/apps/api/schemas.py`
+  - API schema tests
+  - optional API docs updates
+- Deliverables:
+  - explicit runtime-specific debug section for planned execution details
+  - clearer separation between stable run response fields and runtime-internal debug state
+  - compatibility strategy for existing debug consumers
+- Unit test acceptance:
+  - debug responses still expose plan and artifact information for planned runs
+  - direct runs remain backward compatible or have a documented migration path
+  - schema serialization stays deterministic
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - `/runs/debug` remains usable for manual inspection
+  - API debug schemas are less tightly bound to the current runtime internals
+
+### PR 18 - Clarify Skill Capability Boundary
+
+- Goal:
+  - make the long-term role of `skills` and `read_skill` explicit so platform abstractions stop drifting
+- Scope:
+  - `src/clawcore/tooling/builtin/read_skill.py`
+  - skill-related architecture notes in `README.md` and `DEV_NOTES.md`
+  - targeted unit tests if behavior changes
+- Deliverables:
+  - explicit decision on whether `read_skill` is a core builtin or a document-skill adapter
+  - aligned documentation for the skill mental model
+  - any required code or naming cleanup to reflect the chosen boundary
+- Unit test acceptance:
+  - skill loading and `read_skill` behavior remain deterministic
+  - documentation and code terminology are aligned
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - the project has one clear, documented skill model
+  - platform and skill-layer responsibilities are easier to reason about
+
+### PR 19 - Provider-Neutral Runtime Wiring Prep
+
+- Goal:
+  - prepare the runtime-backed agent layer for future non-OpenAI providers without forcing a full provider expansion now
+- Scope:
+  - `src/agents/openai_runtime_agent.py`
+  - new runtime/LLM builder helper module(s)
+  - agent construction unit tests
+- Deliverables:
+  - explicit runtime builder boundary
+  - OpenAI wiring preserved as the default concrete implementation
+  - construction path that is easier to adapt for future provider-specific variants
+- Unit test acceptance:
+  - existing OpenAI-backed agents still build and run the same way
+  - runtime construction responsibilities are covered by deterministic tests
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - no regression for current OpenAI-backed flows
+  - app-level runtime wiring is less tightly coupled to one provider implementation
+
 ## Testing Strategy
 
 ### Rules
