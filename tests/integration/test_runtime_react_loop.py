@@ -2,8 +2,8 @@ import asyncio
 import json
 from pathlib import Path
 
-from clawcore.llm.mock import MockLLM
-from clawcore.models import ReActStep, ToolCall
+from clawcore.llm.mock import MockLLM, MockPlanner
+from clawcore.models import ExecutionPlan, PlanSubgoal, ReActStep, ToolCall
 from clawcore.runtime.session import AgentSession
 from clawcore.runtime.react import ReActRuntime
 from clawcore.skilling.models import SkillDefinition
@@ -17,6 +17,19 @@ def build_runtime(step_fn) -> ReActRuntime:  # type: ignore[no-untyped-def]
     registry.register(ExecScriptTool())
     executor = ToolExecutor(registry, policy=ToolPolicy())
     return ReActRuntime(llm=MockLLM(step_fn), tool_executor=executor)
+
+
+def build_planned_runtime(step_fn, plan_fn) -> ReActRuntime:  # type: ignore[no-untyped-def]
+    registry = ToolRegistry()
+    registry.register(ReadTool())
+    registry.register(WriteTool())
+    registry.register(ExecScriptTool())
+    executor = ToolExecutor(registry, policy=ToolPolicy())
+    return ReActRuntime(
+        llm=MockLLM(step_fn),
+        planner=MockPlanner(plan_fn),
+        tool_executor=executor,
+    )
 
 
 def test_runtime_react_loop_matches_fixture_cases(tmp_path: Path) -> None:
@@ -60,4 +73,29 @@ def test_runtime_react_loop_matches_fixture_cases(tmp_path: Path) -> None:
             assert (
                 asyncio.run(runtime.run("run script", active_skill=active_skill, workspace_dir=tmp_path))
                 == "exec_script: release ok"
+            )
+        elif mode == "planned":
+            async def step_fn(session: AgentSession) -> ReActStep:
+                if session.state.active_subgoal_id == "s1":
+                    if not session.state.scratchpad:
+                        return ReActStep(
+                            thought="read weather",
+                            action=ToolCall(name="read", payload={"path": "note.txt"}),
+                        )
+                    return ReActStep(thought="done weather", final_answer="weather ready")
+                return ReActStep(thought="done draft", final_answer="email draft ready")
+
+            def plan_fn(session: AgentSession) -> ExecutionPlan:
+                return ExecutionPlan(
+                    goal="Write a weather email",
+                    subgoals=[
+                        PlanSubgoal(id="s1", task="Fetch weather"),
+                        PlanSubgoal(id="s2", task="Draft email"),
+                    ],
+                    success_criteria=["Weather fetched", "Email drafted"],
+                )
+
+            runtime = build_planned_runtime(step_fn, plan_fn)
+            assert asyncio.run(runtime.run_planned("plan it", workspace_dir=tmp_path, max_steps=2)) == (
+                "email draft ready"
             )

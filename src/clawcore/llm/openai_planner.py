@@ -8,7 +8,6 @@ from typing import Any
 from clawcore.llm.base import BasePlanner
 from clawcore.llm.openai_react import OpenAIReActConfig
 from clawcore.models import ExecutionPlan, PlanStatus, PlanSubgoal
-from clawcore.runtime.prompt_builder import PlanningPromptBuilder
 from clawcore.runtime.session import AgentSession
 from common.observability import logger
 from openai import AsyncOpenAI
@@ -46,11 +45,9 @@ class OpenAIPlanner(BasePlanner):
         config: OpenAIReActConfig,
         *,
         client: AsyncOpenAI | None = None,
-        prompt_builder: PlanningPromptBuilder | None = None,
     ) -> None:
         self.config = config
         self.client = client or AsyncOpenAI(api_key=config.api_key, base_url=config.base_url)
-        self.prompt_builder = prompt_builder or PlanningPromptBuilder()
 
     async def create_plan(self, session: AgentSession) -> ExecutionPlan:
         messages = self._build_messages(session)
@@ -77,12 +74,6 @@ class OpenAIPlanner(BasePlanner):
 
     def _build_messages(self, session: AgentSession) -> list[dict[str, str]]:
         state = session.state
-        system_prompt = self.prompt_builder.build(
-            skills=list(state.available_skills),
-            tool_names=[],
-            tool_descriptions=None,
-            base_instructions=state.system_prompt,
-        )
         user_context: dict[str, object] = {
             "user_input": state.user_input,
             "loaded_skills": [skill.name for skill in state.loaded_skills],
@@ -93,7 +84,7 @@ class OpenAIPlanner(BasePlanner):
             {
                 "role": "system",
                 "content": "\n\n".join(
-                    part for part in [system_prompt, _PLANNER_PROTOCOL_INSTRUCTIONS] if part
+                    part for part in [state.system_prompt, _PLANNER_PROTOCOL_INSTRUCTIONS] if part
                 ),
             },
             {

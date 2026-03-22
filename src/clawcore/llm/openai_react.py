@@ -83,6 +83,28 @@ class OpenAIReActLLM(BaseLLM):
             "active_skill": state.active_skill.name if state.active_skill is not None else None,
             "loaded_skills": [skill.name for skill in state.loaded_skills],
             "scratchpad_observations": list(state.scratchpad),
+            "plan": {
+                "goal": state.plan.goal,
+                "status": state.plan.status,
+                "subgoals": [
+                    {
+                        "id": subgoal.id,
+                        "task": subgoal.task,
+                        "status": subgoal.status,
+                        "notes": subgoal.notes,
+                    }
+                    for subgoal in state.plan.subgoals
+                ],
+                "success_criteria": list(state.plan.success_criteria),
+                "assumptions": list(state.plan.assumptions),
+            }
+            if state.plan is not None
+            else None,
+            "active_subgoal_id": state.active_subgoal_id,
+            "artifacts": [
+                {"name": artifact.name, "kind": artifact.kind, "content": artifact.content}
+                for artifact in state.artifacts
+            ],
         }
 
         return [

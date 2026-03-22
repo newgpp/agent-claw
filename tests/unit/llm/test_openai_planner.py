@@ -5,6 +5,7 @@ import pytest
 
 from clawcore.llm import OpenAIPlanner, OpenAIReActConfig
 from clawcore.models import PlanStatus
+from clawcore.runtime.prompt_builder import PlanningPromptBuilder
 from clawcore.runtime.session import AgentSession
 from clawcore.runtime.state import RuntimeState
 from clawcore.skilling.models import SkillDefinition
@@ -53,14 +54,18 @@ def build_session() -> AgentSession:
         directory=Path("/virtual/skills/weather"),
         skill_file=Path("/virtual/skills/weather/SKILL.md"),
     )
+    prompt = PlanningPromptBuilder().build(
+        skills=[skill],
+        tool_names=["curl", "send_email"],
+        tool_descriptions={
+            "curl": "Fetch HTTP resources.",
+            "send_email": "Send an email to a recipient.",
+        },
+        base_instructions="Use the available tools carefully.",
+    )
     state = RuntimeState(
         user_input="Write an email based on today's weather",
-        system_prompt=(
-            "Use the available tools carefully.\n"
-            "Available tools:\n"
-            "- curl: Fetch HTTP resources.\n"
-            "- send_email: Send an email to a recipient."
-        ),
+        system_prompt=prompt,
         available_skills=(skill,),
         loaded_skills=[skill],
         active_skill=skill,

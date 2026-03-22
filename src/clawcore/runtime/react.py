@@ -7,8 +7,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from clawcore.llm.base import BaseLLM
-from clawcore.models import ReActStep, ToolResult
+from clawcore.llm.base import BaseLLM, BasePlanner
+from clawcore.models import ExecutionPlan, PlanArtifact, PlanStatus, PlanSubgoal, ReActStep, ToolResult
 from clawcore.runtime.result import RuntimeRunResult
 from clawcore.skilling.models import SkillDefinition
 from clawcore.tooling.base import ToolExecutionContext
@@ -26,7 +26,7 @@ from common.observability import (
 )
 from common.context import RunContext
 from clawcore.runtime.hooks import RuntimeHook, emit_hook
-from clawcore.runtime.prompt_builder import SystemPromptBuilder
+from clawcore.runtime.prompt_builder import PlanningPromptBuilder, SystemPromptBuilder
 from clawcore.runtime.session import AgentSession
 from clawcore.runtime.state import RuntimeState
 
@@ -37,7 +37,9 @@ class ReActRuntime:
 
     llm: BaseLLM
     tool_executor: ToolExecutor
+    planner: BasePlanner | None = None
     prompt_builder: SystemPromptBuilder = field(default_factory=SystemPromptBuilder)
+    planning_prompt_builder: PlanningPromptBuilder = field(default_factory=PlanningPromptBuilder)
     event_hook: RuntimeHook | None = None
 
     async def run(
@@ -70,6 +72,140 @@ class ReActRuntime:
         base_instructions: str = "",
         workspace_dir: Path | None = None,
     ) -> RuntimeRunResult:
+        return await self._run_debug_direct(
+            user_input,
+            skills=skills,
+            active_skill=active_skill,
+            max_steps=max_steps,
+            base_instructions=base_instructions,
+            workspace_dir=workspace_dir,
+        )
+
+    async def run_planned(
+        self,
+        user_input: str,
+        *,
+        skills: list[SkillDefinition] | None = None,
+        active_skill: SkillDefinition | None = None,
+        max_steps: int = 5,
+        base_instructions: str = "",
+        workspace_dir: Path | None = None,
+    ) -> str:
+        result = await self.run_debug_planned(
+            user_input,
+            skills=skills,
+            active_skill=active_skill,
+            max_steps=max_steps,
+            base_instructions=base_instructions,
+            workspace_dir=workspace_dir,
+        )
+        return result.final_answer
+
+    async def run_debug_planned(
+        self,
+        user_input: str,
+        *,
+        skills: list[SkillDefinition] | None = None,
+        active_skill: SkillDefinition | None = None,
+        max_steps: int = 5,
+        base_instructions: str = "",
+        workspace_dir: Path | None = None,
+    ) -> RuntimeRunResult:
+        if self.planner is None:
+            raise NotImplementedError("Planned execution requires a configured planner.")
+
+        run_context = RunContext(user_input=user_input)
+        trace_token = bind_trace_id(run_context.trace_id)
+        run_token = bind_run_id(run_context.run_id)
+        session_token = bind_session_id(run_context.session_id)
+        resolved_skills = tuple(skills or [])
+        try:
+            state = RuntimeState(
+                user_input=user_input,
+                available_skills=resolved_skills,
+                active_skill=active_skill,
+                loaded_skills=[active_skill] if active_skill is not None else [],
+            )
+            session = AgentSession(state=state)
+            state.system_prompt = self.planning_prompt_builder.build(
+                skills=list(resolved_skills),
+                tool_names=self.tool_executor.registry.names(),
+                tool_descriptions=self.tool_executor.registry.descriptions(),
+                base_instructions=base_instructions,
+            )
+            await self._emit_run_started(run_context, state)
+            state.trace.record("input", user_input)
+
+            plan = await self.planner.create_plan(session)
+            state.plan = plan
+            state.plan.status = PlanStatus.IN_PROGRESS
+            state.trace.record(
+                "plan",
+                plan.goal,
+                subgoals=[subgoal.task for subgoal in plan.subgoals],
+                success_criteria=list(plan.success_criteria),
+            )
+
+            if not plan.subgoals:
+                finished = await self._emit_run_finished(
+                    run_context,
+                    state,
+                    final_answer=plan.goal,
+                )
+                logger.info("Finished planned runtime with empty plan")
+                return RuntimeRunResult(final_answer=finished, state=state)
+
+            final_answer = ""
+            for subgoal in plan.subgoals:
+                state.active_subgoal_id = subgoal.id
+                subgoal.status = PlanStatus.IN_PROGRESS
+                state.trace.record("subgoal.started", subgoal.task, subgoal_id=subgoal.id)
+                subgoal_answer = await self._run_subgoal_loop(
+                    session=session,
+                    run_context=run_context,
+                    max_steps=max_steps,
+                    workspace_dir=workspace_dir,
+                    skills=resolved_skills,
+                )
+                artifact = PlanArtifact(
+                    name=subgoal.id,
+                    content=subgoal_answer,
+                    kind="subgoal_result",
+                )
+                state.artifacts.append(artifact)
+                state.trace.record(
+                    "artifact",
+                    artifact.content,
+                    artifact_name=artifact.name,
+                    artifact_kind=artifact.kind,
+                )
+                session.append_observation(
+                    f"subgoal_result[{subgoal.id} {subgoal.task}]: {subgoal_answer}"
+                )
+                subgoal.status = PlanStatus.COMPLETED
+                state.trace.record("subgoal.completed", subgoal.task, subgoal_id=subgoal.id)
+                final_answer = subgoal_answer
+
+            state.active_subgoal_id = None
+            state.plan.status = PlanStatus.COMPLETED
+            finished = await self._emit_run_finished(run_context, state, final_answer=final_answer)
+            logger.info("Finished planned runtime with {} subgoal(s)", len(plan.subgoals))
+            return RuntimeRunResult(final_answer=finished, state=state)
+        finally:
+            reset_session_id(session_token)
+            reset_run_id(run_token)
+            reset_trace_id(trace_token)
+
+    async def _run_debug_direct(
+        self,
+        user_input: str,
+        *,
+        skills: list[SkillDefinition] | None = None,
+        active_skill: SkillDefinition | None = None,
+        max_steps: int = 5,
+        base_instructions: str = "",
+        workspace_dir: Path | None = None,
+    ) -> RuntimeRunResult:
         run_context = RunContext(user_input=user_input)
         trace_token = bind_trace_id(run_context.trace_id)
         run_token = bind_run_id(run_context.run_id)
@@ -89,116 +225,168 @@ class ReActRuntime:
                 tool_descriptions=self.tool_executor.registry.descriptions(),
                 base_instructions=base_instructions,
             )
-            run_started = RunStarted(
-                run_id=run_context.run_id,
-                session_id=run_context.session_id,
-                trace_id=run_context.trace_id,
-                payload={"user_input": user_input},
-            )
-            run_context.emit(run_started)
-            await emit_hook(run_started, self.event_hook)
-            state.events.append(run_started)
+            await self._emit_run_started(run_context, state)
             state.trace.record("input", user_input)
-            successful_tool_calls: dict[str, str] = {}
-
-            for step_index in range(1, max_steps + 1):
-                step = await self.llm.next_step(session)
-                self._record_step(state, step_index, step)
-
-                if step.final_answer is not None:
-                    finished = RunFinished(
-                        run_id=run_context.run_id,
-                        session_id=run_context.session_id,
-                        trace_id=run_context.trace_id,
-                        payload={"final_answer": step.final_answer},
-                    )
-                    run_context.emit(finished)
-                    await emit_hook(finished, self.event_hook)
-                    state.events.append(finished)
-                    state.trace.record("final_answer", step.final_answer)
-                    logger.info("Finished ReAct loop in {} step(s)", step_index)
-                    return RuntimeRunResult(final_answer=step.final_answer, state=state)
-
-                if step.action is None:
-                    raise RuntimeError("Planner returned neither an action nor a final answer.")
-
-                called = ToolCalled(
-                    run_id=run_context.run_id,
-                    session_id=run_context.session_id,
-                    trace_id=run_context.trace_id,
-                    payload={"tool": step.action.name, "payload": step.action.payload},
-                )
-                run_context.emit(called)
-                await emit_hook(called, self.event_hook)
-                state.events.append(called)
-
-                action_signature = self._action_signature(step.action.name, step.action.payload)
-                cached_content = successful_tool_calls.get(action_signature)
-                if cached_content is not None:
-                    result_content = (
-                        "Duplicate tool call avoided. Reuse the previous successful result to answer the user.\n"
-                        f"Previous result: {cached_content}"
-                    )
-                    result_status = ToolExecutionStatus.SUCCESS
-                    result_tool_name = step.action.name
-                    logger.info(
-                        "Skipped duplicate tool call name={} payload={}",
-                        step.action.name,
-                        step.action.payload,
-                    )
-                else:
-                    result = await self.tool_executor.execute(
-                        step.action.name,
-                        step.action.payload,
-                        context=ToolExecutionContext(
-                            workspace_dir=workspace_dir or Path.cwd(),
-                            active_skill=state.active_skill,
-                            available_skills=resolved_skills,
-                        ),
-                    )
-                    result_content = result.content
-                    result_status = result.status
-                    result_tool_name = result.tool_name
-                returned = ToolReturned(
-                    run_id=run_context.run_id,
-                    session_id=run_context.session_id,
-                    trace_id=run_context.trace_id,
-                    payload={
-                        "tool": result_tool_name,
-                        "status": result_status,
-                        "content": result_content,
-                    },
-                )
-                run_context.emit(returned)
-                await emit_hook(returned, self.event_hook)
-                state.events.append(returned)
-
-                if result_status != ToolExecutionStatus.SUCCESS:
-                    raise RuntimeError(result_content)
-
-                tool_result = ToolResult(name=result_tool_name, content=result_content)
-                state.tool_results.append(tool_result)
-                successful_tool_calls.setdefault(action_signature, result_content)
-                if step.action.name == "read_skill":
-                    selected_skill = self._resolve_skill_from_payload(step.action.payload, resolved_skills)
-                    if selected_skill is not None:
-                        state.active_skill = selected_skill
-                        if selected_skill not in state.loaded_skills:
-                            state.loaded_skills.append(selected_skill)
-                observation = self._build_observation(
-                    tool_name=result_tool_name,
-                    result_content=result_content,
-                    action_payload=step.action.payload,
-                    skills=resolved_skills,
-                )
-                session.append_observation(observation)
-                state.trace.record("observation", observation)
+            final_answer = await self._run_subgoal_loop(
+                session=session,
+                run_context=run_context,
+                max_steps=max_steps,
+                workspace_dir=workspace_dir,
+                skills=resolved_skills,
+            )
+            finished = await self._emit_run_finished(run_context, state, final_answer=final_answer)
+            logger.info("Finished ReAct loop")
+            return RuntimeRunResult(final_answer=finished, state=state)
         finally:
             reset_session_id(session_token)
             reset_run_id(run_token)
             reset_trace_id(trace_token)
 
+    async def _run_subgoal_loop(
+        self,
+        *,
+        session: AgentSession,
+        run_context: RunContext,
+        max_steps: int,
+        workspace_dir: Path | None,
+        skills: tuple[SkillDefinition, ...],
+    ) -> str:
+        successful_tool_calls: dict[str, str] = {}
+
+        for step_index in range(1, max_steps + 1):
+            step = await self.llm.next_step(session)
+            self._record_step(session.state, step_index, step)
+
+            if step.final_answer is not None:
+                return step.final_answer
+
+            if step.action is None:
+                raise RuntimeError("Planner returned neither an action nor a final answer.")
+
+            result_tool_name, result_status, result_content = await self._execute_tool_action(
+                run_context=run_context,
+                state=session.state,
+                action_name=step.action.name,
+                action_payload=step.action.payload,
+                successful_tool_calls=successful_tool_calls,
+                workspace_dir=workspace_dir,
+                skills=skills,
+            )
+            if result_status != ToolExecutionStatus.SUCCESS:
+                raise RuntimeError(result_content)
+
+            tool_result = ToolResult(name=result_tool_name, content=result_content)
+            session.state.tool_results.append(tool_result)
+            successful_tool_calls.setdefault(
+                self._action_signature(step.action.name, step.action.payload),
+                result_content,
+            )
+            if step.action.name == "read_skill":
+                selected_skill = self._resolve_skill_from_payload(step.action.payload, skills)
+                if selected_skill is not None:
+                    session.state.active_skill = selected_skill
+                    if selected_skill not in session.state.loaded_skills:
+                        session.state.loaded_skills.append(selected_skill)
+            observation = self._build_observation(
+                tool_name=result_tool_name,
+                result_content=result_content,
+                action_payload=step.action.payload,
+                skills=skills,
+            )
+            session.append_observation(observation)
+            session.state.trace.record("observation", observation)
+
         raise RuntimeError("ReAct loop exceeded max_steps without a final answer.")
+
+    async def _execute_tool_action(
+        self,
+        *,
+        run_context: RunContext,
+        state: RuntimeState,
+        action_name: str,
+        action_payload: dict[str, object],
+        successful_tool_calls: dict[str, str],
+        workspace_dir: Path | None,
+        skills: tuple[SkillDefinition, ...],
+    ) -> tuple[str, ToolExecutionStatus, str]:
+        called = ToolCalled(
+            run_id=run_context.run_id,
+            session_id=run_context.session_id,
+            trace_id=run_context.trace_id,
+            payload={"tool": action_name, "payload": action_payload},
+        )
+        run_context.emit(called)
+        await emit_hook(called, self.event_hook)
+        state.events.append(called)
+
+        action_signature = self._action_signature(action_name, action_payload)
+        cached_content = successful_tool_calls.get(action_signature)
+        if cached_content is not None:
+            result_content = (
+                "Duplicate tool call avoided. Reuse the previous successful result to answer the user.\n"
+                f"Previous result: {cached_content}"
+            )
+            result_status = ToolExecutionStatus.SUCCESS
+            result_tool_name = action_name
+            logger.info("Skipped duplicate tool call name={} payload={}", action_name, action_payload)
+        else:
+            result = await self.tool_executor.execute(
+                action_name,
+                action_payload,
+                context=ToolExecutionContext(
+                    workspace_dir=workspace_dir or Path.cwd(),
+                    active_skill=state.active_skill,
+                    available_skills=skills,
+                ),
+            )
+            result_content = result.content
+            result_status = result.status
+            result_tool_name = result.tool_name
+
+        returned = ToolReturned(
+            run_id=run_context.run_id,
+            session_id=run_context.session_id,
+            trace_id=run_context.trace_id,
+            payload={
+                "tool": result_tool_name,
+                "status": result_status,
+                "content": result_content,
+            },
+        )
+        run_context.emit(returned)
+        await emit_hook(returned, self.event_hook)
+        state.events.append(returned)
+        return result_tool_name, result_status, result_content
+
+    async def _emit_run_started(self, run_context: RunContext, state: RuntimeState) -> None:
+        run_started = RunStarted(
+            run_id=run_context.run_id,
+            session_id=run_context.session_id,
+            trace_id=run_context.trace_id,
+            payload={"user_input": state.user_input},
+        )
+        run_context.emit(run_started)
+        await emit_hook(run_started, self.event_hook)
+        state.events.append(run_started)
+
+    async def _emit_run_finished(
+        self,
+        run_context: RunContext,
+        state: RuntimeState,
+        *,
+        final_answer: str,
+    ) -> str:
+        finished = RunFinished(
+            run_id=run_context.run_id,
+            session_id=run_context.session_id,
+            trace_id=run_context.trace_id,
+            payload={"final_answer": final_answer},
+        )
+        run_context.emit(finished)
+        await emit_hook(finished, self.event_hook)
+        state.events.append(finished)
+        state.trace.record("final_answer", final_answer)
+        return final_answer
 
     def _record_step(self, state: RuntimeState, step_index: int, step: ReActStep) -> None:
         state.trace.record("thought", f"step={step_index} {step.thought}")
