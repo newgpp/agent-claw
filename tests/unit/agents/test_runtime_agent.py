@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from agents.base import AgentDescriptor
+from agents.planning_routing import PlanningRoutingPolicy, StructuralPlanningRoutingPolicy
 from agents.runtime_agent import AgentRunConfig, PlanningConfig, PlanningMode, RuntimeAgent
 from clawcore.runtime import ReActRuntime
 
@@ -29,6 +30,16 @@ class StubRuntime:
 
 class DemoRuntimeAgent(RuntimeAgent):
     descriptor = AgentDescriptor(name="demo-agent", description="Demo runtime agent.")
+
+
+class StubPlanningRoutingPolicy(PlanningRoutingPolicy):
+    def __init__(self, should_plan_result: bool) -> None:
+        self.should_plan_result = should_plan_result
+        self.calls: list[str] = []
+
+    def should_plan(self, user_input: str) -> bool:
+        self.calls.append(user_input)
+        return self.should_plan_result
 
 
 async def _run_agent(agent: RuntimeAgent, user_input: str, *, workspace_dir: Path | None = None) -> str:
@@ -152,7 +163,7 @@ def test_runtime_agent_uses_direct_runner_for_simple_auto_mode_requests(tmp_path
     assert "mode" not in runtime.calls[0]
 
 
-def test_runtime_agent_uses_planned_runner_for_complex_auto_mode_requests(tmp_path: Path) -> None:
+def test_runtime_agent_uses_planned_runner_for_multi_step_auto_mode_requests(tmp_path: Path) -> None:
     runtime = StubRuntime(result="done")
     agent = DemoRuntimeAgent(
         runtime,
@@ -164,26 +175,7 @@ def test_runtime_agent_uses_planned_runner_for_complex_auto_mode_requests(tmp_pa
 
     import asyncio
 
-    asyncio.run(agent.run("查询唐山天气并写一封邮件发给我"))
-
-    assert runtime.calls[0]["mode"] == "planned"
-
-
-def test_runtime_agent_uses_planned_runner_for_research_and_authoring_auto_mode_requests(
-    tmp_path: Path,
-) -> None:
-    runtime = StubRuntime(result="done")
-    agent = DemoRuntimeAgent(
-        runtime,
-        config=AgentRunConfig(
-            workspace_dir=tmp_path,
-            planning=PlanningConfig(mode=PlanningMode.AUTO),
-        ),
-    )  # type: ignore[arg-type]
-
-    import asyncio
-
-    asyncio.run(agent.run("汇总昨天美股市场变动并写一段分析"))
+    asyncio.run(agent.run("先查唐山天气，然后整理成一段说明。"))
 
     assert runtime.calls[0]["mode"] == "planned"
 
@@ -205,6 +197,26 @@ def test_runtime_agent_keeps_authoring_only_requests_direct_in_auto_mode(tmp_pat
     assert "mode" not in runtime.calls[0]
 
 
+def test_runtime_agent_uses_injected_planning_routing_policy(tmp_path: Path) -> None:
+    runtime = StubRuntime(result="done")
+    policy = StubPlanningRoutingPolicy(should_plan_result=True)
+    agent = DemoRuntimeAgent(
+        runtime,
+        config=AgentRunConfig(
+            workspace_dir=tmp_path,
+            planning=PlanningConfig(mode=PlanningMode.AUTO),
+        ),
+        planning_routing_policy=policy,
+    )  # type: ignore[arg-type]
+
+    import asyncio
+
+    asyncio.run(agent.run("hello"))
+
+    assert policy.calls == ["hello"]
+    assert runtime.calls[0]["mode"] == "planned"
+
+
 def test_runtime_agent_raises_clear_error_when_auto_planned_runner_is_missing(tmp_path: Path) -> None:
     class DirectOnlyRuntime(StubRuntime):
         run_planned = None  # type: ignore[assignment]
@@ -221,8 +233,26 @@ def test_runtime_agent_raises_clear_error_when_auto_planned_runner_is_missing(tm
     import asyncio
 
     try:
-        asyncio.run(agent.run("查询唐山天气并写一封邮件发给我"))
+        asyncio.run(agent.run("先查天气，然后发给我"))
     except NotImplementedError as exc:
         assert "run_planned" in str(exc)
     else:
         raise AssertionError("Expected planning-enabled runtime to require run_planned().")
+
+
+def test_structural_planning_routing_policy_detects_ordered_steps() -> None:
+    policy = StructuralPlanningRoutingPolicy()
+
+    assert policy.should_plan("First gather the weather, then summarize the result.")
+
+
+def test_structural_planning_routing_policy_detects_bullet_lists() -> None:
+    policy = StructuralPlanningRoutingPolicy()
+
+    assert policy.should_plan("- collect sources\n- summarize findings")
+
+
+def test_structural_planning_routing_policy_keeps_simple_single_request_direct() -> None:
+    policy = StructuralPlanningRoutingPolicy()
+
+    assert not policy.should_plan("写一段关于春天的短文")

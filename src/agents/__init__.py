@@ -12,6 +12,7 @@ from agents.openai_runtime_agent import (
     OpenAIRuntimeAgentOptions,
     load_openai_react_config_from_env,
 )
+from agents.planning_routing import PlanningRoutingPolicy, StructuralPlanningRoutingPolicy
 from agents.runtime_agent import AgentRunConfig, PlanningConfig, PlanningMode, RuntimeAgent
 
 __all__ = [
@@ -21,7 +22,9 @@ __all__ = [
     "OpenAIRuntimeAgentOptions",
     "PlanningConfig",
     "PlanningMode",
+    "PlanningRoutingPolicy",
     "RuntimeAgent",
+    "StructuralPlanningRoutingPolicy",
     "build_agent",
     "clear_agent_cache",
     "get_agent",

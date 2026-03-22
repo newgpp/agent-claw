@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-import re
 
 from agents.base import AgentDescriptor, BaseAgent
+from agents.planning_routing import PlanningRoutingPolicy, StructuralPlanningRoutingPolicy
 from clawcore.runtime import ReActRuntime, RuntimeRunResult
 from clawcore.skilling.models import SkillDefinition
 
@@ -44,9 +44,16 @@ class RuntimeAgent(BaseAgent):
 
     descriptor = AgentDescriptor(name="runtime-agent", description="Runtime-backed agent.")
 
-    def __init__(self, runtime: ReActRuntime, *, config: AgentRunConfig | None = None) -> None:
+    def __init__(
+        self,
+        runtime: ReActRuntime,
+        *,
+        config: AgentRunConfig | None = None,
+        planning_routing_policy: PlanningRoutingPolicy | None = None,
+    ) -> None:
         self.runtime = runtime
         self.config = config or AgentRunConfig()
+        self.planning_routing_policy = planning_routing_policy or StructuralPlanningRoutingPolicy()
 
     async def run(self, user_input: str, *, workspace_dir: Path | None = None) -> str:
         resolved_workspace = workspace_dir or self.config.workspace_dir
@@ -77,7 +84,10 @@ class RuntimeAgent(BaseAgent):
     def _resolve_runner(self, method_name: str, user_input: str):
         if self.config.planning.mode == PlanningMode.DISABLED:
             return getattr(self.runtime, method_name)
-        if self.config.planning.mode == PlanningMode.AUTO and not self._should_plan(user_input):
+        if (
+            self.config.planning.mode == PlanningMode.AUTO
+            and not self.planning_routing_policy.should_plan(user_input)
+        ):
             return getattr(self.runtime, method_name)
 
         planned_method_name = f"{method_name}_planned"
@@ -88,55 +98,3 @@ class RuntimeAgent(BaseAgent):
                 f"'{planned_method_name}()'."
             )
         return planned_runner
-
-    def _should_plan(self, user_input: str) -> bool:
-        text = user_input.strip().lower()
-        if not text:
-            return False
-
-        delivery_markers = (
-            "发送",
-            "发到",
-            "发给",
-            "邮件",
-            "email",
-            "mail",
-            "send",
-        )
-        if any(marker in text for marker in delivery_markers):
-            return True
-
-        authoring_markers = (
-            "写一篇",
-            "写封",
-            "撰写",
-            "write",
-            "draft",
-        )
-        research_markers = (
-            "整理",
-            "汇总",
-            "分析",
-            "研究",
-            "对比",
-            "总结",
-            "report",
-            "summarize",
-            "analyse",
-            "analyze",
-            "research",
-        )
-        has_authoring = any(marker in text for marker in authoring_markers)
-        has_research = any(marker in text for marker in research_markers)
-
-        if has_authoring and has_research:
-            return True
-
-        multi_step_patterns = (
-            r"(并|然后|再|之后).*(发送|发给|邮件|写|总结|分析)",
-            r"(and then|then|and)\s+(send|email|write|draft|summarize|analyze)",
-        )
-        if any(re.search(pattern, text) for pattern in multi_step_patterns):
-            return True
-
-        return False

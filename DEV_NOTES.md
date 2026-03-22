@@ -700,7 +700,7 @@ prepare_run()
   - explicit planning routing policy interface
   - default routing policy that preserves current `auto` behavior
   - `RuntimeAgent` updated to depend on a routing policy rather than hard-coded heuristics
-  - clear extension point for future config-driven or model-driven routing
+  - clear extension point for future code-level routing policy injection without adding JSON config surface
 - Unit test acceptance:
   - `disabled`, `auto`, and `always` modes retain existing behavior
   - default routing policy preserves current multi-step detection behavior
