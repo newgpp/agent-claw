@@ -1,6 +1,6 @@
-# agent-claw
+# 智爪
 
-Python agent framework with a ReAct runtime, reusable skills/tools, and API-facing agents configured from JSON.
+一个基于 Python 的 Agent 框架，内置 ReAct 运行时，支持可复用的技能与工具，并通过 JSON 配置面向 API 的业务 Agent。
 
 ## Overview
 
