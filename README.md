@@ -1,32 +1,63 @@
 # agent-claw
 
-Python agent framework with a ReAct core, shared runtime utilities, and app-level agents built from reusable skills and tools.
+Python agent framework with a ReAct runtime, reusable skills/tools, and API-facing agents configured from JSON.
 
 ## Overview
 
-`agent-claw` is a layered Python project for building agents with a ReAct-style
-planning and execution loop.
-
 - `common`: shared infrastructure such as logging, tracing, and utility helpers
-- `clawcore`: the runtime layer that coordinates thoughts, actions, tools, and
-  final answers
+- `clawcore`: runtime loop, planner/LLM adapters, and tool execution
 - `agents`: business-facing agents built on top of `clawcore`
 
-## Project Structure
+```mermaid
+flowchart TD
+    A[User Input] --> B[Agent Config<br/>tools + skills + base_instructions + planning.mode]
+    B --> C{planning.mode}
 
-```text
-agent-claw/
-├── DEV_NOTES.md
-├── configs/
-├── examples/
-├── pyproject.toml
-├── skills/
-├── src/
-│   ├── agents/
-│   ├── apps/
-│   ├── clawcore/
-│   └── common/
-└── tests/
+    C -->|disabled| D[Direct ReAct Runtime]
+    C -->|auto| E{Simple request?}
+    C -->|always| F[Planned Runtime]
+
+    E -->|yes| D
+    E -->|no| F
+
+    D --> G[LLM Step]
+    G --> H{Need full skill?}
+    H -->|yes| I[read_skill]
+    H -->|no| J[Select Tool]
+    I --> J
+    J --> K[Tool Execution]
+    K --> L[Observation -> Scratchpad]
+    L --> G
+    G -->|final_answer| M[Response]
+
+    F --> N[Planner]
+    N --> O[Execution Plan<br/>subgoals + success_criteria]
+    O --> P[Execute Current Subgoal via ReAct]
+    P --> Q{Need full skill?}
+    Q -->|yes| I2[read_skill]
+    Q -->|no| J2[Select Tool]
+    I2 --> J2
+    J2 --> K2[Tool Execution]
+    K2 --> L2[Observation / Artifact]
+    L2 --> P
+    P -->|subgoal done| R{More subgoals?}
+    R -->|yes| P
+    R -->|no| M
+```
+
+```mermaid
+flowchart LR
+    A[configs/agents/*.json] --> B[agents]
+    S[skills/] --> B
+    B --> C[clawcore]
+    C --> D[LLM Adapters]
+    C --> E[Runtime / Planner / Tool Executor]
+    E --> F[agent tools]
+    B --> F
+    B --> G[apps/api]
+    C --> H[common]
+    B --> H
+    G --> H
 ```
 
 ## Quick Start
@@ -36,12 +67,14 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
 cp .env.example .env
-python3 examples/openai_runtime.py
-pytest
+python3 -m apps.api.run
 ```
 
-Set `OPENAI_API_KEY` in `.env` before running OpenAI-backed agents. You can also
-override:
+Set `OPENAI_API_KEY` in `.env` before running OpenAI-backed agents.
+
+## Environment
+
+Common variables:
 
 - `OPENAI_BASE_URL`
 - `TAVILY_API_KEY`
@@ -57,10 +90,7 @@ override:
 - `AGENT_CLAW_API_HOST`
 - `AGENT_CLAW_API_PORT`
 
-## Gmail SMTP for `send_email`
-
-If you want to test the `send_email` agent tool with Gmail, use this `.env`
-setup:
+Gmail SMTP example for `send_email`:
 
 ```env
 SMTP_HOST=smtp.gmail.com
@@ -72,22 +102,17 @@ SMTP_USE_TLS=true
 SMTP_USE_SSL=false
 ```
 
-Notes:
-
-- `SMTP_PASSWORD` should be a Gmail App Password, not your normal Google account password
-- Gmail SMTP usually requires Google 2-Step Verification to be enabled before App Passwords are available
-- `SMTP_FROM` should match the Gmail address you authenticated with for the simplest local testing setup
+`SMTP_PASSWORD` should be a Gmail App Password, not your normal account password.
 
 ## Agent Configs
 
-Runtime agents are configured from JSON files in `configs/agents/`.
+Agents are configured from `configs/agents/*.json`.
 
-- `configs/agents/openai_runtime.json`
-  - minimal OpenAI-compatible runtime agent example
-- `configs/agents/weather.json`
-  - weather-focused agent that enables the `weather` skill and the agent-level `curl` tool
+- `openai_runtime.json`: minimal OpenAI-compatible runtime agent
+- `weather.json`: weather-focused direct agent
+- `research_email_auto.json`: auto-plan agent using weather/research/email tools
 
-Each config currently controls:
+Common fields:
 
 - `type`
 - `model`
@@ -97,83 +122,50 @@ Each config currently controls:
 - `max_steps`
 - `include_read_skill`
 - `temperature`
+- `planning.mode`
 
 Built-in tools are loaded by default. The `tools` field is for agent-level tools
 defined under `src/agents/tools/`.
 
-## Running
+## API
 
-Run the example OpenAI-backed agent:
-
-```bash
-python3 examples/openai_runtime.py
-```
-
-Run a weather-focused agent through the API after installing the weather skill:
-
-```bash
-python examples/install_skill.py \
-  "https://github.com/openclaw/openclaw/tree/main/skills/weather" \
-  --skills-root skills
-python3 -m apps.api.run
-curl -X POST http://127.0.0.1:8000/runs \
-  -H 'Content-Type: application/json' \
-  -d '{"agent_id":"weather","user_input":"香港的天气怎么样？"}'
-```
-
-Run the FastAPI API locally:
+Run locally:
 
 ```bash
 python3 -m apps.api.run
 ```
 
-The API exposes:
+Endpoints:
 
 - `GET /health`
 - `GET /agents`
 - `POST /runs`
 - `POST /runs/debug`
 
-`POST /runs/debug` returns the final answer plus runtime debug state:
-
-- `scratchpad`
-- `tool_results`
-- `events`
-- `trace`
-
-## Logging and Trace IDs
-
-The API configures a shared Loguru formatter on startup. Console logs show a
-single `trace_id` so one HTTP request can be followed across:
-
-- API request logging
-- LLM request and response logging
-- runtime completion logging
-
-The request trace is bound once at the API middleware layer and reused by the
-runtime for downstream logs.
-
-## Install Skills
-
-`agent-claw` currently supports installing document-skills from GitHub directory
-URLs.
+`/runs/debug` returns the final answer plus runtime state such as `scratchpad`,
+`tool_results`, `plan`, `events`, `trace`, and `token_usage`.
 
 Example:
 
 ```bash
-python examples/install_skill.py \
-  "https://github.com/anthropics/skills/tree/main/skills/xlsx" \
-  --skills-root skills
+curl -X POST http://127.0.0.1:8000/runs/debug \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"weather","user_input":"香港的天气怎么样？"}'
 ```
 
-If you use a local proxy, pass it explicitly:
+## Skills
+
+Skills live under `skills/` and are versioned with the repo.
+
+Install a skill from GitHub:
 
 ```bash
 python examples/install_skill.py \
-  "https://github.com/anthropics/skills/tree/main/skills/xlsx" \
-  --skills-root skills \
-  --proxy http://127.0.0.1:7890
+  "https://github.com/openclaw/openclaw/tree/main/skills/weather" \
+  --skills-root skills
 ```
+
+With a proxy:
 
 ```bash
 python examples/install_skill.py \
@@ -181,23 +173,3 @@ python examples/install_skill.py \
   --skills-root skills \
   --proxy http://127.0.0.1:7890
 ```
-
-The installer will:
-
-- parse the GitHub skill URL
-- download the target skill directory
-- require `SKILL.md`
-- preserve the skill's `scripts/` directory
-- generate a local `skill.json`
-
-Installed skills live under the repo-level `skills/` directory and can be
-reviewed, versioned, or customized alongside the rest of the project.
-
-## Initial Goal
-
-This repository starts with a minimal runtime skeleton so the architecture is
-clear from day one:
-
-- `common` owns shared concerns
-- `clawcore` owns the execution model
-- `agents` owns business behavior
