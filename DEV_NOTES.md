@@ -25,12 +25,13 @@ Use this section to record each PR in a lightweight format.
 - Branch: feat/planning-config-state -> main
 - Status: partially landed
 - Summary:
-  - added planning config support with `disabled`, `auto`, and `always` routing modes
+  - added planning config support with `disabled` and `always` planner semantics
   - added structured plan and subgoal runtime state for planned execution
   - added a planner contract plus OpenAI-backed planner adapter
-  - added the planned runtime execution loop on top of the existing direct ReAct runtime
-  - expanded API debug state with `plan` and `token_usage`
-  - extracted planning routing into an injectable policy instead of shared base-agent heuristics
+  - upgraded the planner contract to support `0 / 1 / n` subgoal plans
+  - added a planner-first runtime entry path on top of the existing ReAct executor
+  - collapsed planner-enabled agent execution onto planner-first runtime wiring
+  - expanded API debug state with planner-first plan shape metadata and token usage
   - improved token usage tracking
   - added research/email/weather agent tool flows and improved Open-Meteo location resolution
   - tracked repo-local `skills/` in version control to stabilize configured agent behavior
@@ -38,10 +39,10 @@ Use this section to record each PR in a lightweight format.
   - `./.venv/bin/pytest`
 - Notes:
   - PR 8 through PR 11 are effectively landed on `main`
-  - PR 13 through PR 15 are represented by merged commits and follow-up changes on `main`
-  - unimplemented follow-up roadmap items were removed from this document before the next plan-first redesign branch
+  - PR 13 through PR 19 are represented by merged commits and follow-up changes on `main`
+  - planner-enabled runs now follow a planner-first model instead of the earlier direct-vs-planned routing split
   - the implementation landed as a branch merge plus follow-up commits, not as one isolated PR per roadmap item
-  - direct mode remains supported; planning is an additive capability selected by config and routing
+  - planner-disabled direct mode remains available, but planner-enabled agents no longer depend on auto-routing heuristics
 
 ### Previous
 
@@ -159,6 +160,11 @@ prepare_run()
   - ordered timeline of the run across thought, action, observation, and final answer
 
 ## PR Roadmap
+
+Historical note:
+
+- PR 8 through PR 15 record the earlier dual-track planning design and are retained for implementation history.
+- PR 16 onward define the current planner-first direction and supersede the earlier `disabled/auto/always` routing mental model for planner-enabled agents.
 
 ### PR 1 - Common Foundation
 

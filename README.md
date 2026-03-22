@@ -14,35 +14,29 @@ flowchart TD
     B --> C{planning.mode}
 
     C -->|disabled| D[Direct ReAct Runtime]
-    C -->|auto| E{Simple request?}
-    C -->|always| F[Planned Runtime]
+    C -->|always| E[Planner-First Runtime]
 
-    E -->|yes| D
-    E -->|no| F
+    D --> F[LLM Step]
+    F --> G{Need full skill?}
+    G -->|yes| H[read_skill]
+    G -->|no| I[Select Tool]
+    H --> I
+    I --> J[Tool Execution]
+    J --> K[Observation -> Scratchpad]
+    K --> F
+    F -->|final_answer| L[Response]
 
-    D --> G[LLM Step]
-    G --> H{Need full skill?}
-    H -->|yes| I[read_skill]
-    H -->|no| J[Select Tool]
-    I --> J
-    J --> K[Tool Execution]
-    K --> L[Observation -> Scratchpad]
-    L --> G
-    G -->|final_answer| M[Response]
+    E --> M[Planner]
+    M --> N[Execution Plan<br/>0 / 1 / n subgoals]
+    N --> O{Plan shape}
 
-    F --> N[Planner]
-    N --> O[Execution Plan<br/>subgoals + success_criteria]
-    O --> P[Execute Current Subgoal via ReAct]
-    P --> Q{Need full skill?}
-    Q -->|yes| I2[read_skill]
-    Q -->|no| J2[Select Tool]
-    I2 --> J2
-    J2 --> K2[Tool Execution]
-    K2 --> L2[Observation / Artifact]
-    L2 --> P
-    P -->|subgoal done| R{More subgoals?}
-    R -->|yes| P
-    R -->|no| M
+    O -->|0 subgoals| L
+    O -->|1 subgoal| P[Execute One Task via ReAct]
+    O -->|n subgoals| Q[Execute Subgoals Sequentially]
+
+    P --> R[Artifact / Final Answer]
+    Q --> R
+    R --> L
 ```
 
 ```mermaid
@@ -110,7 +104,7 @@ Agents are configured from `configs/agents/*.json`.
 
 - `openai_runtime.json`: minimal OpenAI-compatible runtime agent
 - `weather.json`: weather-focused direct agent
-- `research_email_auto.json`: auto-plan agent using weather/research/email tools
+- `research_email_plan_first.json`: planner-first agent using weather/research/email tools
 
 Common fields:
 
@@ -123,6 +117,12 @@ Common fields:
 - `include_read_skill`
 - `temperature`
 - `planning.mode`
+
+Planner-enabled agents now use planner-first execution. The planner may return:
+
+- `0` subgoals for a direct answer
+- `1` subgoal for a single executable task
+- `n` subgoals for multi-step work
 
 Built-in tools are loaded by default. The `tools` field is for agent-level tools
 defined under `src/agents/tools/`.
@@ -143,7 +143,7 @@ Endpoints:
 - `POST /runs/debug`
 
 `/runs/debug` returns the final answer plus runtime state such as `scratchpad`,
-`tool_results`, `plan`, `events`, `trace`, and `token_usage`.
+`tool_results`, `plan`, `artifacts`, `events`, `trace`, and `token_usage`.
 
 Example:
 

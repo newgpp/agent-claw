@@ -71,6 +71,8 @@ def test_debug_run_response_serializes_plan_state() -> None:
 
     assert dumped["plan"]["goal"] == "Write and send a weather email"
     assert dumped["plan"]["subgoals"][0]["status"] == "completed"
+    assert dumped["plan"]["is_direct_answer"] is False
+    assert dumped["plan"]["is_single_step"] is False
     assert dumped["active_subgoal_id"] == "s2"
     assert dumped["artifacts"] == [{"name": "weather_report", "content": "Hong Kong: 26C", "kind": "note"}]
     assert dumped["replanning_count"] == 1
@@ -79,3 +81,27 @@ def test_debug_run_response_serializes_plan_state() -> None:
         "executor": {"prompt_tokens": 300, "completion_tokens": 150, "total_tokens": 450},
         "total": {"prompt_tokens": 420, "completion_tokens": 230, "total_tokens": 650},
     }
+
+
+def test_debug_run_response_serializes_direct_answer_plan_shape() -> None:
+    state = RuntimeState(
+        user_input="what is the weather",
+        plan=ExecutionPlan(
+            goal="Hong Kong is 26C today.",
+            subgoals=[],
+            success_criteria=["Answer the user directly"],
+            assumptions=[],
+            status=PlanStatus.COMPLETED,
+        ),
+    )
+
+    response = DebugRunResponse.from_runtime_result(
+        agent_id="planner-agent",
+        result=RuntimeRunResult(final_answer="Hong Kong is 26C today.", state=state),
+    )
+
+    dumped = response.model_dump()
+
+    assert dumped["plan"]["is_direct_answer"] is True
+    assert dumped["plan"]["is_single_step"] is False
+    assert dumped["plan"]["subgoals"] == []

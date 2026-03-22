@@ -76,6 +76,8 @@ class PlanResponse(BaseModel):
     success_criteria: list[str]
     assumptions: list[str]
     status: PlanStatus
+    is_direct_answer: bool
+    is_single_step: bool
 
     @classmethod
     def from_model(cls, plan: ExecutionPlan) -> "PlanResponse":
@@ -85,6 +87,8 @@ class PlanResponse(BaseModel):
             success_criteria=list(plan.success_criteria),
             assumptions=list(plan.assumptions),
             status=plan.status,
+            is_direct_answer=plan.is_direct_answer,
+            is_single_step=plan.is_single_step,
         )
 
 
