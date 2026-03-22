@@ -14,7 +14,7 @@ from pathlib import Path
 from agents.base import BaseAgent
 from agents.openai_runtime_agent import OpenAIRuntimeAgent, OpenAIRuntimeAgentOptions
 import agents.tools as agent_tools_package
-from agents.runtime_agent import AgentRunConfig
+from agents.runtime_agent import AgentRunConfig, PlanningConfig, PlanningMode
 from clawcore.llm import OpenAIReActConfig
 from clawcore.skilling.loader import load_skills
 from clawcore.tooling import BaseTool, ExecScriptTool, ReadTool, WriteTool
@@ -53,6 +53,8 @@ class OpenAIRuntimeAgentSpec:
     temperature: float = 0.0
     # Optional max token limit for planner responses.
     max_tokens: int | None = None
+    # Planning behavior for the agent runtime.
+    planning: PlanningConfig = field(default_factory=PlanningConfig)
     # Free-form extension slot for future app-level metadata.
     metadata: dict[str, object] = field(default_factory=dict)
 
@@ -109,6 +111,8 @@ def load_agent_spec(path: str | Path) -> OpenAIRuntimeAgentSpec:
     if max_tokens is not None and (not isinstance(max_tokens, int) or max_tokens <= 0):
         raise ValueError("'max_tokens' must be a positive integer when provided.")
 
+    planning = _parse_planning_config(raw)
+
     def optional_string(field_name: str) -> str | None:
         value = raw.get(field_name)
         if value is None:
@@ -134,6 +138,7 @@ def load_agent_spec(path: str | Path) -> OpenAIRuntimeAgentSpec:
         base_url=optional_string("base_url"),
         temperature=float(temperature),
         max_tokens=max_tokens,
+        planning=planning,
         metadata=dict(metadata),
     )
 
@@ -165,6 +170,7 @@ def build_agent(spec: OpenAIRuntimeAgentSpec, *, config_path: str | Path | None 
         skills=tuple(loaded_skills),
         max_steps=spec.max_steps,
         workspace_dir=workspace_dir,
+        planning=spec.planning,
     )
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
@@ -200,6 +206,41 @@ def clear_agent_cache() -> None:
 
 def _build_default_builtin_tools() -> list[BaseTool]:
     return [ReadTool(), WriteTool(), ExecScriptTool()]
+
+
+def _parse_planning_config(raw: dict[str, object]) -> PlanningConfig:
+    raw_planning = raw.get("planning")
+    raw_plan_enabled = raw.get("plan_enabled")
+
+    if raw_planning is not None and raw_plan_enabled is not None:
+        raise ValueError("Use either 'planning' or legacy 'plan_enabled', not both.")
+
+    if raw_plan_enabled is not None:
+        if not isinstance(raw_plan_enabled, bool):
+            raise ValueError("'plan_enabled' must be a boolean when provided.")
+        return PlanningConfig(
+            mode=PlanningMode.AUTO if raw_plan_enabled else PlanningMode.DISABLED
+        )
+
+    if raw_planning is None:
+        return PlanningConfig()
+
+    if not isinstance(raw_planning, dict):
+        raise ValueError("'planning' must be a JSON object when provided.")
+
+    raw_mode = raw_planning.get("mode", PlanningMode.DISABLED.value)
+    if not isinstance(raw_mode, str):
+        raise ValueError("'planning.mode' must be a string.")
+
+    normalized_mode = raw_mode.strip().lower()
+    try:
+        mode = PlanningMode(normalized_mode)
+    except ValueError as exc:
+        raise ValueError(
+            "'planning.mode' must be one of: disabled, auto, always."
+        ) from exc
+
+    return PlanningConfig(mode=mode)
 
 
 def _build_agent_tool(name: str) -> BaseTool:

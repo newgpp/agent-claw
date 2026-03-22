@@ -20,3 +20,22 @@ def test_load_skills_ignores_invalid_entries() -> None:
     skills = load_skills(fixture_root)
 
     assert skills == []
+
+
+def test_load_skills_extracts_description_from_frontmatter(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "weather"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        'name: weather\n'
+        'description: "Get current weather and forecasts."\n'
+        "---\n\n"
+        "# Weather Skill\n\n"
+        "Use this when the user asks about weather.\n",
+        encoding="utf-8",
+    )
+
+    skills = load_skills(tmp_path)
+
+    assert [skill.name for skill in skills] == ["weather"]
+    assert skills[0].description == "Get current weather and forecasts."

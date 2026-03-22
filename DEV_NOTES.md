@@ -422,6 +422,248 @@ prepare_run()
   - manual owner sign-off on debug payload usability
   - request logs and runtime logs share the same trace id
 
+### PR 8 - Planning Config and Routing
+
+- Goal:
+  - introduce planning as an explicit runtime capability without breaking the existing direct ReAct flow
+- Scope:
+  - `agents/factory.py`
+  - `agents/runtime_agent.py`
+  - `agents/openai_runtime_agent.py`
+  - runtime config models
+  - config fixtures and factory tests
+- Deliverables:
+  - planning config on JSON-backed agents
+  - planning mode support:
+    - `disabled`
+    - `auto`
+    - `always`
+  - backward-compatible config parsing for a temporary `plan_enabled` alias if needed
+  - runtime routing contract that selects:
+    - direct execution
+    - planned execution
+  - no behavior change when planning mode is `disabled`
+- Unit test acceptance:
+  - valid planning config parses correctly
+  - invalid planning config fails with clear errors
+  - legacy config without planning still builds the same direct runtime agent
+  - `disabled` mode routes to the existing direct path
+  - `always` mode routes to the planned path
+  - `auto` mode can be selected without changing existing direct-only configs
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - existing API and runtime tests still pass without config changes
+  - planning config is available for later PRs without forcing planner implementation details
+
+### PR 9 - Planning State and Plan Models
+
+- Goal:
+  - add first-class runtime data structures for task plans, subgoals, and execution artifacts
+- Scope:
+  - `clawcore/models.py`
+  - `clawcore/runtime/state.py`
+  - `clawcore/runtime/result.py`
+  - `apps/api/schemas.py`
+  - tests for serialization and state transitions
+- Deliverables:
+  - structured plan model
+  - structured subgoal model with statuses:
+    - `pending`
+    - `in_progress`
+    - `completed`
+    - `blocked`
+    - `failed`
+  - runtime state fields for:
+    - current plan
+    - active subgoal
+    - execution artifacts
+    - replanning count
+  - debug response support for returning plan state cleanly
+- Unit test acceptance:
+  - plan and subgoal models serialize predictably
+  - runtime state can hold direct-mode runs without requiring a plan
+  - runtime state can hold planned-mode runs with multiple subgoals
+  - artifact updates are stable and deterministic
+  - debug schema exposes plan data without breaking old clients
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - direct-mode runtime behavior remains backward compatible
+  - plan data model is stable enough for planner and executor PRs
+
+### PR 10 - Planner Interface and Prompting
+
+- Goal:
+  - introduce a dedicated planner contract that can generate a task plan before execution
+- Scope:
+  - `clawcore/llm/base.py`
+  - `clawcore/llm/mock.py`
+  - new planner adapter module(s)
+  - planning prompt builder
+  - planner unit tests
+- Deliverables:
+  - planner-specific response schema
+  - abstract planner interface separate from step-by-step direct ReAct execution
+  - prompt builder for plan generation
+  - planner output with:
+    - goal
+    - subgoals
+    - success criteria
+    - optional assumptions or blockers
+  - mock planner backend for deterministic tests
+- Unit test acceptance:
+  - planner prompt contains tools, skills, and user intent in stable format
+  - valid planner output parses into structured plan models
+  - invalid planner output fails clearly
+  - mock planner can drive deterministic planned-mode tests
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - planner contract is stable and usable by runtime orchestration
+  - no change to direct-mode runtime semantics
+
+### PR 11 - Planned Runtime Execution
+
+- Goal:
+  - execute multi-step tasks through a plan-execute-review loop while preserving the existing direct mode
+- Scope:
+  - `clawcore/runtime/react.py`
+  - `clawcore/runtime/session.py`
+  - `clawcore/runtime/prompt_builder.py`
+  - runtime integration tests
+- Deliverables:
+  - planned execution path
+  - subgoal-aware execution loop
+  - artifact handoff between subgoals
+  - review step after subgoal execution
+  - final answer synthesis from accumulated artifacts
+  - direct mode remains the default behavior when planning is disabled
+- Unit test acceptance:
+  - runtime can execute a simple multi-subgoal plan
+  - completed subgoals update statuses correctly
+  - artifacts from one subgoal can be consumed by the next
+  - planned runs still honor max-step protections
+  - direct runs still behave exactly as before
+- Integration test need:
+  - yes
+- Integration dataset:
+  - `tests/fixtures/runtime/planned_cases.json`
+- cases:
+    - plan with two sequential subgoals
+    - plan with mixed skill and tool usage
+    - direct-mode task bypasses planner
+    - planned-mode task returns final answer from artifacts
+    - blocked subgoal surfaces a clear failure
+- PR exit criteria:
+  - all unit tests pass
+  - planned runtime integration cases pass locally
+  - existing direct runtime fixtures remain green
+
+### PR 12 - Replanning and Failure Recovery
+
+- Goal:
+  - improve OOD robustness by letting the runtime inspect failures and revise the plan instead of exiting immediately
+- Scope:
+  - `clawcore/runtime/react.py`
+  - planner adapter module(s)
+  - runtime state tracking for retries and replans
+  - runtime integration tests
+- Deliverables:
+  - structured failure classification for:
+    - tool failure
+    - missing context
+    - blocked subgoal
+    - exhausted plan
+  - bounded replanning support
+  - configurable replan limit
+  - runtime observations that capture why replanning happened
+  - clearer failure messages for unrecoverable runs
+- Unit test acceptance:
+  - failed subgoals can trigger replanning when enabled
+  - replanning count is tracked correctly
+  - runtime stops after the configured replan limit
+  - unrecoverable failures still surface deterministically
+- Integration test need:
+  - yes
+- Integration dataset:
+  - extend `tests/fixtures/runtime/planned_cases.json`
+- cases:
+    - tool failure followed by successful replan
+    - missing context followed by inserted research step
+    - repeated failure hits replan limit
+- PR exit criteria:
+  - all unit tests pass
+  - replanning integration cases pass locally
+  - failure recovery does not regress existing direct-mode behavior
+
+### PR 13 - Planned Agent Demo and API Debug Surface
+
+- Goal:
+  - prove the planning stack end-to-end with one realistic multi-step agent workflow and expose enough debug state to inspect it
+- Scope:
+  - `configs/agents/`
+  - `examples/`
+  - `apps/api/schemas.py`
+  - optional API docs updates
+  - integration tests
+- Deliverables:
+  - one planning-enabled demo agent config
+  - one realistic planned workflow example such as:
+    - gather weather
+    - gather context
+    - draft content
+    - send output
+  - API debug output for plan, subgoal status, and artifacts
+  - example documentation for choosing between direct and planned modes
+- Unit test acceptance:
+  - demo config parses correctly
+  - debug response includes plan state for planned runs
+  - direct-run debug responses remain backward compatible
+- Integration test need:
+  - yes
+- Integration dataset:
+  - `tests/fixtures/api/planned_run_cases.json`
+  - `tests/fixtures/agents/planned_agent_cases.json`
+- PR exit criteria:
+  - all unit tests pass
+  - end-to-end planned agent flow passes locally with mock backends
+  - API debug payload is usable for manual inspection of planning behavior
+
+### PR 14 - Search and Email Agent Tools
+
+- Goal:
+  - add agent-owned tools for external research and message delivery so planned agents can complete realistic multi-step tasks
+- Scope:
+  - `src/agents/tools/tavily.py`
+  - `src/agents/tools/send_email.py`
+  - `tests/unit/agents/`
+  - `.env.example`
+  - optional example agent config updates
+- Deliverables:
+  - `tavily` agent tool for web search through Tavily API
+  - `send_email` agent tool for SMTP-based outbound email
+  - environment variable contract for both tools
+  - clear tool descriptions and payload validation
+  - deterministic unit tests with mocked network and SMTP backends
+- Unit test acceptance:
+  - Tavily tool validates required query input
+  - Tavily tool rejects missing API key configuration
+  - Tavily tool normalizes a successful search response
+  - send_email validates recipient, subject, and body inputs
+  - send_email rejects missing SMTP configuration
+  - send_email builds and sends a message through the configured SMTP backend
+  - factory auto-discovers both tools
+- Integration test need:
+  - not required
+- PR exit criteria:
+  - all unit tests pass
+  - tools are discoverable through existing JSON agent config wiring
+  - environment setup is documented clearly enough for local manual testing
+
 ## Testing Strategy
 
 ### Rules

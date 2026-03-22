@@ -9,7 +9,7 @@ from typing import Any
 
 from agents.base import AgentDescriptor
 from agents.runtime_agent import AgentRunConfig, RuntimeAgent
-from clawcore.llm import OpenAIReActConfig, OpenAIReActLLM
+from clawcore.llm import OpenAIPlanner, OpenAIReActConfig, OpenAIReActLLM
 from clawcore.runtime import ReActRuntime
 from clawcore.tooling import BaseTool, ReadSkillTool, ToolExecutor, ToolPolicy, ToolRegistry
 
@@ -117,6 +117,7 @@ class OpenAIRuntimeAgent(RuntimeAgent):
         )
         runtime = ReActRuntime(
             llm=OpenAIReActLLM(llm_config, client=client),
+            planner=OpenAIPlanner(llm_config, client=client),
             tool_executor=ToolExecutor(registry, policy=policy or ToolPolicy()),
         )
         super().__init__(runtime, config=resolved_options.run_config)

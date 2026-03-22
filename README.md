@@ -34,7 +34,7 @@ agent-claw/
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .[dev]
+pip install -e '.[dev]'
 cp .env.example .env
 python3 examples/openai_runtime.py
 pytest
@@ -44,9 +44,39 @@ Set `OPENAI_API_KEY` in `.env` before running OpenAI-backed agents. You can also
 override:
 
 - `OPENAI_BASE_URL`
+- `TAVILY_API_KEY`
+- `TAVILY_API_URL`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_FROM`
+- `SMTP_USE_TLS`
+- `SMTP_USE_SSL`
 - `AGENT_CLAW_AGENTS_DIR`
 - `AGENT_CLAW_API_HOST`
 - `AGENT_CLAW_API_PORT`
+
+## Gmail SMTP for `send_email`
+
+If you want to test the `send_email` agent tool with Gmail, use this `.env`
+setup:
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=yourname@gmail.com
+SMTP_PASSWORD=your_gmail_app_password
+SMTP_FROM=yourname@gmail.com
+SMTP_USE_TLS=true
+SMTP_USE_SSL=false
+```
+
+Notes:
+
+- `SMTP_PASSWORD` should be a Gmail App Password, not your normal Google account password
+- Gmail SMTP usually requires Google 2-Step Verification to be enabled before App Passwords are available
+- `SMTP_FROM` should match the Gmail address you authenticated with for the simplest local testing setup
 
 ## Agent Configs
 
@@ -160,8 +190,8 @@ The installer will:
 - preserve the skill's `scripts/` directory
 - generate a local `skill.json`
 
-Installed skills are meant to be local runtime assets and are ignored by git
-through `skills/` in `.gitignore`.
+Installed skills live under the repo-level `skills/` directory and can be
+reviewed, versioned, or customized alongside the rest of the project.
 
 ## Initial Goal
 

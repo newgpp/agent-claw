@@ -20,8 +20,10 @@ class CurlTool(BaseTool):
         raw_url = str(payload.get("url", "")).strip()
         if not raw_url:
             raise ValueError("curl requires a non-empty 'url'.")
-        if not (raw_url.startswith("http://") or raw_url.startswith("https://")):
-            raise ValueError("curl only supports http:// or https:// URLs.")
+        if raw_url.startswith(("http://", "https://")):
+            normalized_url = raw_url
+        else:
+            normalized_url = f"https://{raw_url}"
 
         method = str(payload.get("method", "GET")).strip().upper() or "GET"
         command = ["curl", "-s", "-L", "-X", method]
@@ -41,7 +43,7 @@ class CurlTool(BaseTool):
         if isinstance(max_time, bool) or not isinstance(max_time, int) or max_time <= 0:
             raise ValueError("curl 'max_time' must be a positive integer.")
         command.extend(["--max-time", str(max_time)])
-        command.append(raw_url)
+        command.append(normalized_url)
 
         process = await asyncio.create_subprocess_exec(
             *command,

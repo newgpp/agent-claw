@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from clawcore.llm.mock import MockLLM
-from clawcore.models import ReActStep, ToolCall
+from clawcore.llm.mock import MockLLM, MockPlanner
+from clawcore.models import ExecutionPlan, PlanStatus, PlanSubgoal, ReActStep, ToolCall
 from clawcore.runtime.session import AgentSession
 from clawcore.runtime.react import ReActRuntime
 from clawcore.skilling.models import SkillDefinition
@@ -19,6 +19,14 @@ def build_tool_executor() -> ToolExecutor:
     registry.register(WriteTool())
     registry.register(ExecScriptTool())
     return ToolExecutor(registry, policy=ToolPolicy())
+
+
+def build_planned_runtime(step_fn, plan_fn) -> ReActRuntime:  # type: ignore[no-untyped-def]
+    return ReActRuntime(
+        llm=MockLLM(step_fn),
+        planner=MockPlanner(plan_fn),
+        tool_executor=build_tool_executor(),
+    )
 
 
 def test_runtime_completes_no_tool_turn() -> None:
@@ -226,6 +234,8 @@ def test_runtime_summarizes_read_skill_observation(tmp_path: Path) -> None:
     assert "read_skill_summary:" in result
     assert '"skill_name": "weather"' in result
     assert '"summary": ["Get current weather and forecasts for a location."' in result
+    assert '"recommended_tools": ["curl"]' in result
+    assert '"command_examples": ["curl \\"wttr.in/Hong+Kong?format=3\\""' in result
     assert '"call_hint": "curl \\"wttr.in/Hong+Kong?format=3\\""' in result
     assert "# Weather Skill" not in result
     assert "Always include a location in the weather query." in result
@@ -344,3 +354,84 @@ def test_runtime_avoids_duplicate_tool_calls(tmp_path: Path) -> None:
 
     assert CountingReadTool.calls == 1
     assert "Duplicate tool call avoided" in result
+
+
+def test_runtime_executes_planned_subgoals_in_order(tmp_path: Path) -> None:
+    (tmp_path / "weather.txt").write_text("Hong Kong 26C", encoding="utf-8")
+
+    def plan_fn(session: AgentSession) -> ExecutionPlan:
+        return ExecutionPlan(
+            goal="Write and send a weather update",
+            subgoals=[
+                PlanSubgoal(id="s1", task="Fetch the weather"),
+                PlanSubgoal(id="s2", task="Draft the message"),
+            ],
+            success_criteria=["Weather is fetched", "Draft is written"],
+        )
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        if session.state.active_subgoal_id == "s1":
+            if not session.state.scratchpad:
+                return ReActStep(
+                    thought="Read the weather file.",
+                    action=ToolCall(name="read", payload={"path": "weather.txt"}),
+                )
+            return ReActStep(thought="Weather captured.", final_answer="weather summary ready")
+        if session.state.active_subgoal_id == "s2":
+            return ReActStep(
+                thought="Draft from the weather artifact.",
+                final_answer="email draft: bring an umbrella",
+            )
+        return ReActStep(thought="fallback", final_answer="done")
+
+    runtime = build_planned_runtime(step_fn, plan_fn)
+
+    result = asyncio.run(runtime.run_planned("prepare update", workspace_dir=tmp_path, max_steps=2))
+
+    assert result == "email draft: bring an umbrella"
+
+
+def test_runtime_run_debug_planned_returns_plan_and_artifacts(tmp_path: Path) -> None:
+    (tmp_path / "weather.txt").write_text("Hong Kong 26C", encoding="utf-8")
+
+    def plan_fn(session: AgentSession) -> ExecutionPlan:
+        return ExecutionPlan(
+            goal="Write and send a weather update",
+            subgoals=[
+                PlanSubgoal(id="s1", task="Fetch the weather"),
+                PlanSubgoal(id="s2", task="Draft the message"),
+            ],
+            success_criteria=["Weather is fetched", "Draft is written"],
+        )
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        if session.state.active_subgoal_id == "s1":
+            if not session.state.scratchpad:
+                return ReActStep(
+                    thought="Read the weather file.",
+                    action=ToolCall(name="read", payload={"path": "weather.txt"}),
+                )
+            return ReActStep(thought="Weather captured.", final_answer="weather summary ready")
+        return ReActStep(thought="Draft from artifact.", final_answer="email draft: bring an umbrella")
+
+    runtime = build_planned_runtime(step_fn, plan_fn)
+
+    result = asyncio.run(runtime.run_debug_planned("prepare update", workspace_dir=tmp_path, max_steps=2))
+
+    assert result.final_answer == "email draft: bring an umbrella"
+    assert result.state.plan is not None
+    assert result.state.plan.goal == "Write and send a weather update"
+    assert result.state.plan.status == PlanStatus.COMPLETED
+    assert [subgoal.status for subgoal in result.state.plan.subgoals] == [
+        PlanStatus.COMPLETED,
+        PlanStatus.COMPLETED,
+    ]
+    assert [artifact.name for artifact in result.state.artifacts] == ["s1", "s2"]
+    assert result.state.trace.events[1].kind == "plan"
+
+
+def test_runtime_planned_mode_requires_planner() -> None:
+    runtime = ReActRuntime(llm=MockLLM(lambda session: ReActStep(thought="done", final_answer="hello")), tool_executor=build_tool_executor())
+
+    with pytest.raises(NotImplementedError, match="configured planner"):
+        asyncio.run(runtime.run_planned("hello"))

@@ -8,5 +8,8 @@
   "include_read_skill": true,
   "base_url": "http://localhost:1234/v1",
   "temperature": 0.2,
-  "max_tokens": 256
+  "max_tokens": 256,
+  "planning": {
+    "mode": "disabled"
+  }
 }

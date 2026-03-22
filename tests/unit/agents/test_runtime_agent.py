@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from agents.base import AgentDescriptor
-from agents.runtime_agent import AgentRunConfig, RuntimeAgent
+from agents.runtime_agent import AgentRunConfig, PlanningConfig, PlanningMode, RuntimeAgent
 from clawcore.runtime import ReActRuntime
 
 
@@ -16,6 +16,14 @@ class StubRuntime:
 
     async def run_debug(self, user_input: str, **kwargs) -> str:  # type: ignore[no-untyped-def]
         self.calls.append({"user_input": user_input, **kwargs})
+        return self.result
+
+    async def run_planned(self, user_input: str, **kwargs) -> str:  # type: ignore[no-untyped-def]
+        self.calls.append({"mode": "planned", "user_input": user_input, **kwargs})
+        return self.result
+
+    async def run_debug_planned(self, user_input: str, **kwargs) -> str:  # type: ignore[no-untyped-def]
+        self.calls.append({"mode": "planned", "user_input": user_input, **kwargs})
         return self.result
 
 
@@ -91,3 +99,130 @@ def test_runtime_agent_forwards_debug_runs(tmp_path: Path) -> None:
     asyncio.run(agent.run_debug("hello"))
 
     assert runtime.calls[0]["workspace_dir"] == tmp_path
+
+
+def test_runtime_agent_uses_direct_runner_when_planning_disabled(tmp_path: Path) -> None:
+    runtime = StubRuntime(result="done")
+    agent = DemoRuntimeAgent(
+        runtime,
+        config=AgentRunConfig(
+            workspace_dir=tmp_path,
+            planning=PlanningConfig(mode=PlanningMode.DISABLED),
+        ),
+    )  # type: ignore[arg-type]
+
+    import asyncio
+
+    asyncio.run(agent.run("hello"))
+
+    assert "mode" not in runtime.calls[0]
+
+
+def test_runtime_agent_uses_planned_runner_when_planning_always_enabled(tmp_path: Path) -> None:
+    runtime = StubRuntime(result="done")
+    agent = DemoRuntimeAgent(
+        runtime,
+        config=AgentRunConfig(
+            workspace_dir=tmp_path,
+            planning=PlanningConfig(mode=PlanningMode.ALWAYS),
+        ),
+    )  # type: ignore[arg-type]
+
+    import asyncio
+
+    asyncio.run(agent.run("hello"))
+
+    assert runtime.calls[0]["mode"] == "planned"
+
+
+def test_runtime_agent_uses_direct_runner_for_simple_auto_mode_requests(tmp_path: Path) -> None:
+    runtime = StubRuntime(result="done")
+    agent = DemoRuntimeAgent(
+        runtime,
+        config=AgentRunConfig(
+            workspace_dir=tmp_path,
+            planning=PlanningConfig(mode=PlanningMode.AUTO),
+        ),
+    )  # type: ignore[arg-type]
+
+    import asyncio
+
+    asyncio.run(agent.run("唐山今天天气怎么样"))
+
+    assert "mode" not in runtime.calls[0]
+
+
+def test_runtime_agent_uses_planned_runner_for_complex_auto_mode_requests(tmp_path: Path) -> None:
+    runtime = StubRuntime(result="done")
+    agent = DemoRuntimeAgent(
+        runtime,
+        config=AgentRunConfig(
+            workspace_dir=tmp_path,
+            planning=PlanningConfig(mode=PlanningMode.AUTO),
+        ),
+    )  # type: ignore[arg-type]
+
+    import asyncio
+
+    asyncio.run(agent.run("查询唐山天气并写一封邮件发给我"))
+
+    assert runtime.calls[0]["mode"] == "planned"
+
+
+def test_runtime_agent_uses_planned_runner_for_research_and_authoring_auto_mode_requests(
+    tmp_path: Path,
+) -> None:
+    runtime = StubRuntime(result="done")
+    agent = DemoRuntimeAgent(
+        runtime,
+        config=AgentRunConfig(
+            workspace_dir=tmp_path,
+            planning=PlanningConfig(mode=PlanningMode.AUTO),
+        ),
+    )  # type: ignore[arg-type]
+
+    import asyncio
+
+    asyncio.run(agent.run("汇总昨天美股市场变动并写一段分析"))
+
+    assert runtime.calls[0]["mode"] == "planned"
+
+
+def test_runtime_agent_keeps_authoring_only_requests_direct_in_auto_mode(tmp_path: Path) -> None:
+    runtime = StubRuntime(result="done")
+    agent = DemoRuntimeAgent(
+        runtime,
+        config=AgentRunConfig(
+            workspace_dir=tmp_path,
+            planning=PlanningConfig(mode=PlanningMode.AUTO),
+        ),
+    )  # type: ignore[arg-type]
+
+    import asyncio
+
+    asyncio.run(agent.run("写一段关于春天的短文"))
+
+    assert "mode" not in runtime.calls[0]
+
+
+def test_runtime_agent_raises_clear_error_when_auto_planned_runner_is_missing(tmp_path: Path) -> None:
+    class DirectOnlyRuntime(StubRuntime):
+        run_planned = None  # type: ignore[assignment]
+
+    runtime = DirectOnlyRuntime()
+    agent = DemoRuntimeAgent(
+        runtime,
+        config=AgentRunConfig(
+            workspace_dir=tmp_path,
+            planning=PlanningConfig(mode=PlanningMode.AUTO),
+        ),
+    )  # type: ignore[arg-type]
+
+    import asyncio
+
+    try:
+        asyncio.run(agent.run("查询唐山天气并写一封邮件发给我"))
+    except NotImplementedError as exc:
+        assert "run_planned" in str(exc)
+    else:
+        raise AssertionError("Expected planning-enabled runtime to require run_planned().")

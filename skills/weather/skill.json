@@ -1,0 +1,13 @@
+{
+  "name": "weather",
+  "source": {
+    "type": "github",
+    "repo": "openclaw/openclaw",
+    "ref": "main",
+    "path": "skills/weather",
+    "url": "https://github.com/openclaw/openclaw/tree/main/skills/weather"
+  },
+  "tools": [],
+  "scripts": [],
+  "tags": []
+}

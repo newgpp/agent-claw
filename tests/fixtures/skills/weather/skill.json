@@ -1,0 +1,6 @@
+{
+  "name": "weather",
+  "description": "Check current weather conditions and short forecasts.",
+  "tools": ["curl"],
+  "tags": ["weather", "forecast"]
+}
