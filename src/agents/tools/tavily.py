@@ -14,6 +14,8 @@ class TavilyTool(BaseTool):
     """Search the web via Tavily and return normalized JSON results."""
 
     name = "tavily"
+    max_content_chars = 800
+    max_answer_chars = 800
     description = (
         "Search the web using Tavily. "
         "Payload: {query:string, max_results?:int, search_depth?:string, topic?:string}."
@@ -56,15 +58,23 @@ class TavilyTool(BaseTool):
 
         normalized = {
             "query": query,
-            "answer": str(data.get("answer", "")).strip(),
+            "answer": self._truncate_text(str(data.get("answer", "")).strip(), limit=self.max_answer_chars),
             "results": [
                 {
                     "title": str(item.get("title", "")).strip(),
                     "url": str(item.get("url", "")).strip(),
-                    "content": str(item.get("content", "")).strip(),
+                    "content": self._truncate_text(
+                        str(item.get("content", "")).strip(),
+                        limit=self.max_content_chars,
+                    ),
                 }
                 for item in data.get("results", [])
                 if isinstance(item, dict)
             ],
         }
         return json.dumps(normalized, ensure_ascii=False, sort_keys=True)
+
+    def _truncate_text(self, value: str, *, limit: int) -> str:
+        if len(value) <= limit:
+            return value
+        return value[: limit - 3] + "..."

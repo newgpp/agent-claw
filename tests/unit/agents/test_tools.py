@@ -112,6 +112,43 @@ def test_tavily_tool_returns_normalized_results(monkeypatch: pytest.MonkeyPatch)
     assert FakeAsyncClient.calls[0][1]["search_depth"] == "advanced"
 
 
+def test_tavily_tool_truncates_long_result_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setenv("TAVILY_API_URL", "https://api.tavily.test/search")
+
+    class LongContentClient(FakeAsyncClient):
+        async def post(self, url: str, json: dict[str, object]) -> FakeHTTPResponse:
+            type(self).calls.append((url, json))
+            return FakeHTTPResponse(
+                {
+                    "answer": "A" * 1200,
+                    "results": [
+                        {
+                            "title": "Long result",
+                            "url": "https://example.com/long",
+                            "content": "B" * 2000,
+                        }
+                    ],
+                }
+            )
+
+    monkeypatch.setattr("agents.tools.tavily.httpx.AsyncClient", LongContentClient)
+
+    result = asyncio.run(
+        TavilyTool().execute(
+            {"query": "weather in hong kong"},
+            ToolExecutionContext(),
+        )
+    )
+
+    payload = json.loads(result)
+
+    assert len(payload["answer"]) == TavilyTool.max_answer_chars
+    assert payload["answer"].endswith("...")
+    assert len(payload["results"][0]["content"]) == TavilyTool.max_content_chars
+    assert payload["results"][0]["content"].endswith("...")
+
+
 def test_tavily_tool_falls_back_to_general_topic_for_invalid_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

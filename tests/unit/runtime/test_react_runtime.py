@@ -439,39 +439,6 @@ def test_runtime_run_planner_first_executes_single_subgoal(tmp_path: Path) -> No
     assert [artifact.name for artifact in result.state.artifacts] == ["s1"]
 
 
-def test_runtime_summarizes_tavily_prompt_observation() -> None:
-    runtime = ReActRuntime(llm=MockLLM(lambda session: ReActStep(thought="done", final_answer="ok")), tool_executor=build_tool_executor())
-    long_content = json.dumps(
-        {
-            "query": "小红书 北京 旅游",
-            "results": [
-                {
-                    "title": "北京景点推荐",
-                    "url": "https://example.com/1",
-                    "content": "A" * 2000,
-                },
-                {
-                    "title": "北京 Citywalk",
-                    "url": "https://example.com/2",
-                    "content": "B" * 2000,
-                },
-            ],
-        },
-        ensure_ascii=False,
-    )
-
-    observation = runtime._build_prompt_observation(  # type: ignore[attr-defined]
-        tool_name="tavily",
-        result_content=long_content,
-        action_payload={},
-        skills=(),
-    )
-
-    assert observation.startswith("tavily_summary: ")
-    assert "https://example.com/1" in observation
-    assert "AAAA" not in observation
-
-
 def test_runtime_uses_cached_file_content_across_subgoals_without_read(tmp_path: Path) -> None:
     def plan_fn(session: AgentSession) -> ExecutionPlan:
         return ExecutionPlan(

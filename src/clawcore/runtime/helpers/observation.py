@@ -40,8 +40,6 @@ def build_prompt_observation(
     resolve_skill_from_payload,
 ) -> str:
     """Build the compact prompt-facing observation fed back to the executor."""
-    if tool_name == "tavily":
-        return summarize_tavily_observation(result_content)
     return build_observation(
         tool_name=tool_name,
         result_content=result_content,
@@ -49,44 +47,3 @@ def build_prompt_observation(
         skills=skills,
         resolve_skill_from_payload=resolve_skill_from_payload,
     )
-
-
-def summarize_tavily_observation(result_content: str) -> str:
-    """Compress a Tavily response into a short prompt-friendly summary."""
-    try:
-        payload = json.loads(result_content)
-    except json.JSONDecodeError:
-        return f"tavily: {_summarize_for_prompt(result_content)}"
-
-    if not isinstance(payload, dict):
-        return f"tavily: {_summarize_for_prompt(result_content)}"
-
-    query = str(payload.get("query", "")).strip()
-    results = payload.get("results", [])
-    total_results = len(results) if isinstance(results, list) else 0
-    highlights: list[str] = []
-    if isinstance(results, list):
-        for item in results[:3]:
-            if not isinstance(item, dict):
-                continue
-            title = str(item.get("title", "")).strip()
-            url = str(item.get("url", "")).strip()
-            if title and url:
-                highlights.append(f"{title} ({url})")
-            elif title:
-                highlights.append(title)
-            elif url:
-                highlights.append(url)
-    summary = {
-        "query": query,
-        "result_count": total_results,
-        "top_results": highlights,
-    }
-    return "tavily_summary: " + json.dumps(summary, ensure_ascii=False, sort_keys=True)
-
-
-def _summarize_for_prompt(value: str, *, limit: int = 280) -> str:
-    cleaned = " ".join(value.split())
-    if len(cleaned) <= limit:
-        return cleaned
-    return cleaned[: limit - 3] + "..."
