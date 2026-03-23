@@ -25,6 +25,9 @@ def try_fast_path_completion(
     if tool_name == "read_skill":
         return None
 
+    if _should_defer_to_llm(result_content):
+        return None
+
     subgoal_id = state.active_subgoal_id or "subgoal"
     return (
         f"Subgoal {subgoal_id} completed: "
@@ -58,3 +61,16 @@ def _summarize_for_prompt(value: str, *, limit: int = 280) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 3] + "..."
+
+
+def _should_defer_to_llm(value: str) -> bool:
+    cleaned = " ".join(value.split())
+    if not cleaned:
+        return False
+
+    # Structured or very long tool outputs need one more model turn to format well.
+    if cleaned.startswith("{") or cleaned.startswith("["):
+        return True
+    if len(cleaned) > 160:
+        return True
+    return False

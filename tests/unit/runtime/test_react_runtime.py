@@ -431,11 +431,31 @@ def test_runtime_run_planner_first_executes_single_subgoal(tmp_path: Path) -> No
 
     result = asyncio.run(runtime.run_debug_planner_first("weather?", workspace_dir=tmp_path, max_steps=2))
 
-    assert result.final_answer == "Subgoal s1 completed: Hong Kong 26C"
+    assert result.final_answer == "Hong Kong 26C"
     assert result.state.plan is not None
     assert result.state.plan.is_single_step
     assert result.state.plan.status == PlanStatus.COMPLETED
     assert [subgoal.status for subgoal in result.state.plan.subgoals] == [PlanStatus.COMPLETED]
+
+
+def test_runtime_strips_internal_subgoal_prefix_from_user_final_answer() -> None:
+    def plan_fn(session: AgentSession) -> ExecutionPlan:
+        return ExecutionPlan(
+            goal="Fetch the weather summary",
+            subgoals=[PlanSubgoal(id="s1", task="Fetch weather")],
+            success_criteria=["Weather is returned"],
+        )
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        return ReActStep(thought="done", final_answer="Subgoal s1 completed: 唐山: ☀️ +17°C")
+
+    runtime = build_planned_runtime(step_fn, plan_fn)
+
+    result = asyncio.run(runtime.run_debug_planner_first("查询下唐山的天气"))
+
+    assert result.final_answer == "唐山: ☀️ +17°C"
+    assert result.state.artifacts[0].content == "Subgoal s1 completed: 唐山: ☀️ +17°C"
+    assert result.state.events[-1].payload["final_answer"] == "唐山: ☀️ +17°C"
     assert [artifact.name for artifact in result.state.artifacts] == ["s1"]
 
 
@@ -497,9 +517,133 @@ def test_runtime_fast_paths_single_tool_subgoal_completion(tmp_path: Path) -> No
 
     result = asyncio.run(runtime.run_debug_planner_first("weather?", workspace_dir=tmp_path, max_steps=1))
 
-    assert result.final_answer == "Subgoal s1 completed: Hong Kong 26C"
+    assert result.final_answer == "Hong Kong 26C"
     assert result.state.plan is not None
     assert result.state.plan.status == PlanStatus.COMPLETED
+
+
+def test_runtime_does_not_fast_path_structured_tool_output(tmp_path: Path) -> None:
+    (tmp_path / "weather.json").write_text(
+        json.dumps(
+            {
+                "weather": [
+                    {"date": "2026-03-23", "maxtempC": "18", "mintempC": "8", "weatherDesc": [{"value": "Sunny"}]},
+                    {"date": "2026-03-24", "maxtempC": "20", "mintempC": "7", "weatherDesc": [{"value": "Sunny"}]},
+                    {"date": "2026-03-25", "maxtempC": "23", "mintempC": "11", "weatherDesc": [{"value": "Cloudy"}]},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def plan_fn(session: AgentSession) -> ExecutionPlan:
+        return ExecutionPlan(
+            goal="Fetch the three-day weather forecast",
+            subgoals=[PlanSubgoal(id="s1", task="Use read to read the weather forecast JSON file")],
+            success_criteria=["Three-day weather is summarized"],
+        )
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        if not session.state.scratchpad:
+            return ReActStep(
+                thought="Read the forecast file.",
+                action=ToolCall(name="read", payload={"path": "weather.json"}),
+            )
+        return ReActStep(
+            thought="Summarize the structured weather data.",
+            final_answer="唐山未来三天天气：3月23日晴 8-18C，3月24日晴 7-20C，3月25日多云 11-23C。",
+        )
+
+    runtime = build_planned_runtime(step_fn, plan_fn)
+
+    result = asyncio.run(runtime.run_debug_planner_first("查询下唐山未来三天的天气", workspace_dir=tmp_path, max_steps=2))
+
+    assert result.final_answer == "唐山未来三天天气：3月23日晴 8-18C，3月24日晴 7-20C，3月25日多云 11-23C。"
+    assert result.state.artifacts[0].content == "唐山未来三天天气：3月23日晴 8-18C，3月24日晴 7-20C，3月25日多云 11-23C。"
+    assert result.state.events[-1].payload["final_answer"] == "唐山未来三天天气：3月23日晴 8-18C，3月24日晴 7-20C，3月25日多云 11-23C。"
+
+
+def test_runtime_uses_skill_prompt_observation_summarizer_for_weather_json(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "weather"
+    skill_dir.mkdir(parents=True)
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.write_text(
+        "---\n"
+        'name: weather\n'
+        'description: "Get current weather and forecasts."\n'
+        "---\n\n"
+        "# Weather Skill\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "prompt_observation.py").write_text(
+        "def summarize_tool_result(*, tool_name, action_payload, result_content):\n"
+        "    if tool_name != 'curl':\n"
+        "        return None\n"
+        "    if action_payload.get('url') != 'https://wttr.in/Tangshan?2&format=j1':\n"
+        "        return None\n"
+        "    return 'Weather summary for Tangshan\\n2026-03-23: Sunny, 8-18C, rain 0%'\n",
+        encoding="utf-8",
+    )
+    skill = SkillDefinition(
+        name="weather",
+        description="Get current weather and forecasts.",
+        directory=skill_dir,
+        skill_file=skill_file,
+    )
+
+    def plan_fn(session: AgentSession) -> ExecutionPlan:
+        return ExecutionPlan(
+            goal="Query weather",
+            subgoals=[PlanSubgoal(id="s1", task="Use curl to query the weather API")],
+            success_criteria=["Weather is summarized"],
+        )
+
+    raw_json = json.dumps(
+        {
+            "current_condition": [{"temp_C": "17"}],
+            "weather": [{"date": "2026-03-23", "mintempC": "8", "maxtempC": "18"}],
+        }
+    )
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        if not session.state.scratchpad:
+            return ReActStep(
+                thought="Fetch structured weather JSON.",
+                action=ToolCall(
+                    name="curl",
+                    payload={"url": "https://wttr.in/Tangshan?2&format=j1", "method": "GET"},
+                ),
+            )
+        assert session.state.scratchpad[-1] == f"curl: {raw_json}"
+        assert (
+            session.state.prompt_observations[-1]
+            == "Weather summary for Tangshan\n2026-03-23: Sunny, 8-18C, rain 0%"
+        )
+        return ReActStep(
+            thought="Turn the prompt summary into a user-facing answer.",
+            final_answer="唐山未来三天天气：今天晴，8-18C。",
+        )
+
+    class FakeCurlTool(CurlTool):
+        async def execute(self, payload: dict[str, object], context: ToolExecutionContext) -> str:
+            return raw_json
+
+    registry = ToolRegistry()
+    registry.register(FakeCurlTool())
+    executor = ToolExecutor(registry)
+    runtime = ReActRuntime(llm=MockLLM(step_fn), planner=MockPlanner(plan_fn), tool_executor=executor)
+
+    result = asyncio.run(
+        runtime.run_debug_planner_first(
+            "查询下唐山未来三天的天气",
+            skills=[skill],
+            workspace_dir=tmp_path,
+            max_steps=2,
+        )
+    )
+
+    assert result.final_answer == "唐山未来三天天气：今天晴，8-18C。"
+    assert result.state.tool_results[0].content == raw_json
 
 
 def test_runtime_planned_mode_requires_planner() -> None:

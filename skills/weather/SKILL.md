@@ -1,6 +1,6 @@
 ---
 name: weather
-description: "Get current weather and forecasts via wttr.in or Open-Meteo. Use when: user asks about weather, temperature, or forecasts for any location. NOT for: historical weather data, severe weather alerts, or detailed meteorological analysis. No API key needed."
+description: "Get current weather and short forecasts via wttr.in or Open-Meteo. Use when: user asks about weather, temperature, rain, or travel-weather checks for any location. Prefer concise wttr.in formats for direct answers or email/report drafting, such as `format=3` or custom format strings like `%l:+%c+%t+%w+%h`. For day-specific forecast queries, use wttr.in day indexes like `?1` for tomorrow instead of defaulting to `format=j1`. Use `format=j1` only when structured JSON is truly needed. NOT for: historical weather data, severe weather alerts, or detailed meteorological analysis. No API key needed."
 homepage: https://wttr.in/:help
 metadata: { "openclaw": { "emoji": "☔", "requires": { "bins": ["curl"] } } }
 ---

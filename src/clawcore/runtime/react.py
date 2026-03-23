@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -440,6 +441,7 @@ class ReActRuntime:
                 result_content=result_content,
                 action_payload=step.action.payload,
                 skills=skills,
+                active_skill=session.state.active_skill,
                 resolve_skill_from_payload=self._resolve_skill_from_payload,
             )
             session.append_observation(observation, prompt_observation=prompt_observation)
@@ -533,17 +535,18 @@ class ReActRuntime:
         *,
         final_answer: str,
     ) -> str:
+        normalized_final_answer = self._normalize_user_final_answer(final_answer)
         finished = RunFinished(
             run_id=run_context.run_id,
             session_id=run_context.session_id,
             trace_id=run_context.trace_id,
-            payload={"final_answer": final_answer},
+            payload={"final_answer": normalized_final_answer},
         )
         run_context.emit(finished)
         state.events.append(finished)
-        state.trace.record("final_answer", final_answer)
+        state.trace.record("final_answer", normalized_final_answer)
         state.sync_views()
-        return final_answer
+        return normalized_final_answer
 
     def _record_step(self, state: RuntimeState, step_index: int, step: ReActStep) -> None:
         state.trace.record("thought", f"step={step_index} {step.thought}")
@@ -595,6 +598,7 @@ class ReActRuntime:
             result_content=result_content,
             action_payload=action_payload,
             skills=skills,
+            active_skill=None,
             resolve_skill_from_payload=self._resolve_skill_from_payload,
         )
 
@@ -606,3 +610,7 @@ class ReActRuntime:
         if len(cleaned) <= limit:
             return cleaned
         return cleaned[: limit - 3] + "..."
+
+    def _normalize_user_final_answer(self, value: str) -> str:
+        normalized = re.sub(r"^Subgoal\s+[A-Za-z0-9_-]+\s+completed:\s*", "", value).strip()
+        return normalized or value
