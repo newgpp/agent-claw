@@ -7,9 +7,9 @@ from pathlib import Path
 
 from clawcore.llm.base import BaseLLM, BasePlanner
 from clawcore.models import ExecutionPlan, PlanArtifact, PlanStatus, PlanSubgoal, ReActStep, ToolResult
-from clawcore.runtime.cache import action_signature, cache_written_file
-from clawcore.runtime.fast_path import try_fast_path_completion
-from clawcore.runtime.observation import build_observation, build_prompt_observation
+from clawcore.runtime.helpers.cache import action_signature, cache_written_file
+from clawcore.runtime.helpers.fast_path import try_fast_path_completion
+from clawcore.runtime.helpers.observation import build_observation, build_prompt_observation
 from clawcore.runtime.result import RuntimeRunResult
 from clawcore.skilling.models import SkillDefinition
 from clawcore.tooling.base import ToolExecutionContext

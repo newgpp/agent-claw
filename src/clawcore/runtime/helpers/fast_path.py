@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from clawcore.runtime.observation import summarize_tavily_observation
+from clawcore.runtime.helpers.observation import summarize_tavily_observation
 from clawcore.runtime.state import RuntimeState
 
 
