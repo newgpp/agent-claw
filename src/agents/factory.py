@@ -17,7 +17,7 @@ import agents.tools as agent_tools_package
 from agents.runtime_agent import AgentRunConfig, PlanningConfig, PlanningMode
 from clawcore.llm import OpenAIReActConfig
 from clawcore.skilling.loader import load_skills
-from clawcore.tooling import BaseTool, ExecScriptTool, ReadTool, WriteTool
+from clawcore.tooling import BaseTool, CurlTool, ReadTool, WriteTool
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,7 +205,7 @@ def clear_agent_cache() -> None:
 
 
 def _build_default_builtin_tools() -> list[BaseTool]:
-    return [ReadTool(), WriteTool(), ExecScriptTool()]
+    return [ReadTool(), WriteTool(), CurlTool()]
 
 
 def _parse_planning_config(raw: dict[str, object]) -> PlanningConfig:

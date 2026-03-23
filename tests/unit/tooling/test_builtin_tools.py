@@ -5,7 +5,7 @@ import pytest
 
 from clawcore.skilling.models import SkillDefinition
 from clawcore.tooling.base import ToolExecutionContext
-from clawcore.tooling.builtin.exec_script import ExecScriptTool
+from clawcore.tooling.builtin.curl import CurlTool
 from clawcore.tooling.builtin.read import ReadTool
 from clawcore.tooling.builtin.read_skill import ReadSkillTool
 from clawcore.tooling.builtin.write import WriteTool
@@ -60,47 +60,68 @@ def test_read_skill_tool_reads_declared_skill_markdown(tmp_path: Path) -> None:
     assert "Use this skill for testing." in result
 
 
-def test_exec_script_tool_blocks_undeclared_scripts(tmp_path: Path) -> None:
-    skill_dir = tmp_path / "skills" / "demo"
-    skill_dir.mkdir(parents=True)
-    active_skill = SkillDefinition(
-        name="demo",
-        description="Demo skill",
-        directory=skill_dir,
-        skill_file=skill_dir / "SKILL.md",
-        scripts=["scripts/allowed.py"],
-    )
-    tool = ExecScriptTool()
+def test_curl_tool_rejects_missing_url(tmp_path: Path) -> None:
+    tool = CurlTool()
 
-    with pytest.raises(PermissionError, match="not declared by active skill"):
+    with pytest.raises(ValueError, match="non-empty 'url'"):
+        asyncio.run(tool.execute({}, ToolExecutionContext(workspace_dir=tmp_path)))
+
+
+def test_curl_tool_rejects_invalid_max_time(tmp_path: Path) -> None:
+    tool = CurlTool()
+
+    with pytest.raises(ValueError, match="positive integer"):
         asyncio.run(
             tool.execute(
-                {"script": "scripts/other.py"},
-                ToolExecutionContext(workspace_dir=tmp_path, active_skill=active_skill),
+                {"url": "https://example.com", "max_time": 0},
+                ToolExecutionContext(workspace_dir=tmp_path),
             )
         )
 
 
-def test_exec_script_tool_runs_declared_script(tmp_path: Path) -> None:
-    skill_dir = tmp_path / "skills" / "demo"
-    scripts_dir = skill_dir / "scripts"
-    scripts_dir.mkdir(parents=True)
-    script_path = scripts_dir / "hello.py"
-    script_path.write_text("print('hello from script')\n", encoding="utf-8")
-    active_skill = SkillDefinition(
-        name="demo",
-        description="Demo skill",
-        directory=skill_dir,
-        skill_file=skill_dir / "SKILL.md",
-        scripts=["scripts/hello.py"],
-    )
-    tool = ExecScriptTool()
+def test_curl_tool_runs_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    tool = CurlTool()
+
+    class FakeProcess:
+        returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return (b"ok", b"")
+
+    recorded: dict[str, object] = {}
+
+    async def fake_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
+        recorded["args"] = args
+        recorded["kwargs"] = kwargs
+        return FakeProcess()
+
+    monkeypatch.setattr("clawcore.tooling.builtin.curl.asyncio.create_subprocess_exec", fake_create_subprocess_exec)
 
     result = asyncio.run(
         tool.execute(
-            {"script": "scripts/hello.py"},
-            ToolExecutionContext(workspace_dir=tmp_path, active_skill=active_skill),
+            {
+                "url": "example.com",
+                "method": "post",
+                "headers": {"X-Test": "1"},
+                "data": "hello",
+                "max_time": 5,
+            },
+            ToolExecutionContext(workspace_dir=tmp_path),
         )
     )
 
-    assert result == "hello from script"
+    assert result == "ok"
+    assert recorded["args"] == (
+        "curl",
+        "-s",
+        "-L",
+        "-X",
+        "POST",
+        "-H",
+        "X-Test: 1",
+        "--data",
+        "hello",
+        "--max-time",
+        "5",
+        "https://example.com",
+    )

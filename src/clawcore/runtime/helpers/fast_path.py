@@ -42,7 +42,6 @@ def infer_expected_tools_for_task(task: str) -> set[str]:
         "tavily": ("tavily",),
         "send_email": ("send_email",),
         "read_skill": ("read_skill",),
-        "exec_script": ("exec_script",),
         "read": ("read ", "read the", "read file"),
         "write": ("write ", "write it to a file", "write to a file", "save to a file"),
     }

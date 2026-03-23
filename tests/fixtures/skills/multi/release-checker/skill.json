@@ -1,7 +1,7 @@
 {
   "name": "release-checker",
   "description": "Check release-readiness and validation steps.",
-  "tools": ["read", "exec_script"],
+  "tools": ["read"],
   "scripts": ["scripts/release_check.py"],
   "tags": ["release", "validation"]
 }

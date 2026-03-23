@@ -1,10 +1,10 @@
-"""Restricted curl-based HTTP request tool for agent workflows."""
+"""Built-in curl-based HTTP request tool."""
 
 from __future__ import annotations
 
 import asyncio
 
-from clawcore.tooling import BaseTool, ToolExecutionContext
+from clawcore.tooling.base import BaseTool, ToolExecutionContext
 
 
 class CurlTool(BaseTool):

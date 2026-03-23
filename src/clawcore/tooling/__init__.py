@@ -1,7 +1,7 @@
 """Tooling primitives and built-in tools."""
 
 from clawcore.tooling.base import BaseTool, ToolExecutionContext
-from clawcore.tooling.builtin.exec_script import ExecScriptTool
+from clawcore.tooling.builtin.curl import CurlTool
 from clawcore.tooling.builtin.read import ReadTool
 from clawcore.tooling.builtin.read_skill import ReadSkillTool
 from clawcore.tooling.builtin.write import WriteTool
@@ -12,7 +12,7 @@ from clawcore.tooling.result import ToolExecutionResult, ToolExecutionStatus
 
 __all__ = [
     "BaseTool",
-    "ExecScriptTool",
+    "CurlTool",
     "ReadTool",
     "ReadSkillTool",
     "ToolExecutionContext",

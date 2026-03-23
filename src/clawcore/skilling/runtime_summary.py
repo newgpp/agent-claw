@@ -54,8 +54,6 @@ def extract_skill_recommended_tools(
             continue
         if cleaned.startswith(("curl ", "curl\"", "curl \"", "curl '")) and "curl" not in tools:
             tools.append("curl")
-        if cleaned.startswith(("python ", "python3 ", "./")) and "exec_script" not in tools:
-            tools.append("exec_script")
     return tools
 
 

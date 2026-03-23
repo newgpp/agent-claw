@@ -15,20 +15,6 @@
     }
   },
   {
-    "name": "declared script success",
-    "tool": "exec_script",
-    "payload": {
-      "script": "scripts/release_check.py"
-    }
-  },
-  {
-    "name": "undeclared script blocked",
-    "tool": "exec_script",
-    "payload": {
-      "script": "scripts/not_allowed.py"
-    }
-  },
-  {
     "name": "invalid input",
     "tool": "read",
     "payload": {}

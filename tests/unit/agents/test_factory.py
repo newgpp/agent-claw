@@ -43,7 +43,7 @@ def test_build_agent_resolves_relative_paths_from_config_file(monkeypatch: pytes
     assert agent.config.workspace_dir == Path("tests/fixtures/works/openai_runtime_basic").resolve()
     assert "read" in agent.runtime.tool_executor.registry.names()
     assert "write" in agent.runtime.tool_executor.registry.names()
-    assert "exec_script" in agent.runtime.tool_executor.registry.names()
+    assert "curl" in agent.runtime.tool_executor.registry.names()
     assert "read_skill" in agent.runtime.tool_executor.registry.names()
     assert "echo_payload" in agent.runtime.tool_executor.registry.names()
     assert agent.runtime.llm.config.model == "gpt-test"
@@ -110,12 +110,11 @@ def test_build_agent_resolves_discovered_agent_tools(monkeypatch: pytest.MonkeyP
     assert "echo_payload" in agent.runtime.tool_executor.registry.names()
 
 
-def test_build_agent_resolves_curl_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_agent_includes_builtin_curl_tool(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     spec = OpenAIRuntimeAgentSpec(
         type="openai-runtime",
         model="gpt-test",
-        tools=("curl",),
     )
 
     agent = build_agent(spec)

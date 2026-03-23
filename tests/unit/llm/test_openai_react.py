@@ -106,7 +106,7 @@ def build_planned_session() -> AgentSession:
                     id="s1",
                     task="Fetch Tangshan weather",
                     status=PlanStatus.IN_PROGRESS,
-                    notes="Use the weather skill and curl, not exec_script.",
+                    notes="Use the weather skill and curl.",
                 ),
                 PlanSubgoal(
                     id="s2",
@@ -120,7 +120,7 @@ def build_planned_session() -> AgentSession:
         ),
         active_subgoal_id="s1",
         active_subgoal_task="Fetch Tangshan weather",
-        active_subgoal_notes="Use the weather skill and curl, not exec_script.",
+        active_subgoal_notes="Use the weather skill and curl.",
     )
     return AgentSession(state=state)
 
@@ -150,7 +150,6 @@ def test_openai_react_llm_parses_action_response() -> None:
     )
     assert "If a skill seems relevant but you need its full procedure" in request["messages"][0]["content"]
     assert "Do not call `read` for a file path unless the user provided that path" in request["messages"][0]["content"]
-    assert "Never pass shell commands like `curl ...` or `python ...` as the `script` value" in request["messages"][0]["content"]
     assert "Do not insert unnecessary backslashes before markdown punctuation" in request["messages"][0]["content"]
     assert '"active_skill": "file-summary"' in request["messages"][1]["content"]
     assert '"loaded_skills": ["file-summary"]' in request["messages"][1]["content"]
@@ -265,6 +264,6 @@ def test_openai_react_llm_includes_active_subgoal_context() -> None:
     assert "As soon as the active subgoal is satisfied, return `final_answer` immediately" in system_message
     assert "runtime.file_cache" in system_message
     assert '"user_request": {"raw_input": "Check Tangshan weather and write an email"}' in runtime_context
-    assert '"active_subgoal": {"id": "s1", "notes": "Use the weather skill and curl, not exec_script.", "task": "Fetch Tangshan weather"}' in runtime_context
+    assert '"active_subgoal": {"id": "s1", "notes": "Use the weather skill and curl.", "task": "Fetch Tangshan weather"}' in runtime_context
     assert '"remaining_subgoal_ids": ["s2"]' in runtime_context
     assert '"task": "Draft the email"' not in runtime_context
