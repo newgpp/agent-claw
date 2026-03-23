@@ -26,8 +26,12 @@ class SystemPromptBuilder:
         lines.extend(
             [
                 "Skill loading policy:",
-                "- Start from the available skill summaries instead of assuming a skill must be loaded.",
-                "- Call `read_skill` only when a skill summary looks relevant and you need the full instructions.",
+                "- First check whether the user request clearly matches exactly one available skill.",
+                "- When the request clearly matches a skill, prefer that skill instead of going straight to raw tool use.",
+                "- Start from the available skill summaries before assuming no skill applies.",
+                "- Call `read_skill` when a skill appears to match and you need its full instructions before downstream tools.",
+                "- Do not bypass an obviously matching skill unless the current context already fully answers the user.",
+                "- If repeated tool calls are not producing materially new information, stop searching and answer with the best grounded summary plus clear limitations.",
                 "- After loading a skill, use its instructions to guide later tool calls.",
             ]
         )
@@ -65,7 +69,10 @@ class PlanningPromptBuilder:
                 "Planning policy:",
                 "- Decide whether the task needs multiple dependent steps.",
                 "- Prefer a short plan with concrete subgoals over verbose reasoning.",
-                "- Use the available tools and skill summaries as capability hints.",
+                "- First determine whether the request clearly matches exactly one available skill.",
+                "- If one skill clearly matches, plan around using that skill before considering ad hoc tool use.",
+                "- Do not treat skill summaries as weak hints only; use them as the default routing signal when the match is clear.",
+                "- When search-style work yields little or no new information after a few attempts, prefer a bounded answer with limitations over more retries.",
                 "- Include success criteria that let the runtime know when the task is done.",
                 "- Add assumptions only when missing information could affect execution.",
             ]

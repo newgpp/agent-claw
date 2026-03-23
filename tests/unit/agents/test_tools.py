@@ -183,6 +183,29 @@ def test_tavily_tool_supports_finance_topic(monkeypatch: pytest.MonkeyPatch) -> 
     assert FakeAsyncClient.calls[0][1]["topic"] == "finance"
 
 
+def test_tavily_tool_drops_non_domain_entries_from_domain_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setenv("TAVILY_API_URL", "https://api.tavily.test/search")
+    monkeypatch.setattr("agents.tools.tavily.httpx.AsyncClient", FakeAsyncClient)
+    FakeAsyncClient.calls.clear()
+
+    asyncio.run(
+        TavilyTool().execute(
+            {
+                "query": "shanghai ai jobs",
+                "include_domains": ["zhipin.com", "liepin.com", "jobs"],
+                "exclude_domains": ["video", "forum", "mirror", "zhihu.com"],
+            },
+            ToolExecutionContext(),
+        )
+    )
+
+    assert FakeAsyncClient.calls[0][1]["include_domains"] == ["zhipin.com", "liepin.com"]
+    assert FakeAsyncClient.calls[0][1]["exclude_domains"] == ["zhihu.com"]
+
+
 def test_tavily_tool_distributes_content_budget_across_results(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TAVILY_API_KEY", "test-key")
     monkeypatch.setenv("TAVILY_API_URL", "https://api.tavily.test/search")
@@ -219,6 +242,80 @@ def test_tavily_tool_distributes_content_budget_across_results(monkeypatch: pyte
     assert len(payload["results"]) == 6
     assert len(payload["results"][0]["content"]) == 400
     assert payload["results"][0]["content"].endswith("...")
+
+
+def test_tavily_tool_passes_domain_filters(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setenv("TAVILY_API_URL", "https://api.tavily.test/search")
+    monkeypatch.setattr("agents.tools.tavily.httpx.AsyncClient", FakeAsyncClient)
+    FakeAsyncClient.calls.clear()
+
+    asyncio.run(
+        TavilyTool().execute(
+            {
+                "query": "AI agent hot topics",
+                "include_domains": ["x.com", "twitter.com"],
+                "exclude_domains": ["reddit.com", "youtube.com"],
+            },
+            ToolExecutionContext(),
+        )
+    )
+
+    assert FakeAsyncClient.calls[0][1]["include_domains"] == ["x.com", "twitter.com"]
+    assert FakeAsyncClient.calls[0][1]["exclude_domains"] == ["reddit.com", "youtube.com"]
+
+
+def test_tavily_tool_normalizes_domain_filters(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setenv("TAVILY_API_URL", "https://api.tavily.test/search")
+    monkeypatch.setattr("agents.tools.tavily.httpx.AsyncClient", FakeAsyncClient)
+    FakeAsyncClient.calls.clear()
+
+    asyncio.run(
+        TavilyTool().execute(
+            {
+                "query": "AI agent hot topics",
+                "include_domains": ["https://x.com/home", "http://twitter.com/explore"],
+            },
+            ToolExecutionContext(),
+        )
+    )
+
+    assert FakeAsyncClient.calls[0][1]["include_domains"] == ["x.com", "twitter.com"]
+
+
+def test_tavily_tool_normalizes_numeric_time_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setenv("TAVILY_API_URL", "https://api.tavily.test/search")
+    monkeypatch.setattr("agents.tools.tavily.httpx.AsyncClient", FakeAsyncClient)
+    FakeAsyncClient.calls.clear()
+
+    asyncio.run(
+        TavilyTool().execute(
+            {"query": "nvidia latest news", "time_range": "7d"},
+            ToolExecutionContext(),
+        )
+    )
+
+    assert FakeAsyncClient.calls[0][1]["time_range"] == "d"
+
+
+def test_tavily_tool_normalizes_single_unit_time_range_to_named_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setenv("TAVILY_API_URL", "https://api.tavily.test/search")
+    monkeypatch.setattr("agents.tools.tavily.httpx.AsyncClient", FakeAsyncClient)
+    FakeAsyncClient.calls.clear()
+
+    asyncio.run(
+        TavilyTool().execute(
+            {"query": "tesla latest news", "time_range": "1w"},
+            ToolExecutionContext(),
+        )
+    )
+
+    assert FakeAsyncClient.calls[0][1]["time_range"] == "week"
 
 
 def test_send_email_requires_required_fields() -> None:

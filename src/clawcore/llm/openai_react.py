@@ -28,10 +28,16 @@ Rules:
 - If you can answer the user, set "final_answer" and set "action" to null.
 - Never leave both "action" and "final_answer" null.
 - If an existing scratchpad observation already answers the user, return `final_answer` instead of calling another tool.
+- Use `runtime.subgoal_handoffs` as the authoritative cross-step evidence preserved from completed subgoals.
 - Runtime observations may be summarized for brevity. Do not assume missing detail was written to a file unless a prior tool result explicitly says it was written.
 - Do not repeat the same tool call with the same payload unless the prior result failed or the user explicitly asked for more detail.
+- First check whether the request clearly matches exactly one available skill.
+- When one skill clearly matches, prefer routing through that skill before making raw tool calls.
 - Prefer using the available skill summaries first.
-- If a skill seems relevant but you need its full procedure, call `read_skill` before downstream tools.
+- If a skill seems relevant and you need its full procedure, call `read_skill` before downstream tools.
+- Do not bypass an obviously matching skill unless the current context already fully answers the user.
+- If repeated search/tool calls are not adding materially new information, stop retrying and return the best grounded answer with explicit limitations.
+- Empty or low-quality search results can still satisfy the active subgoal if the user can be helped by a concise summary of what was and was not found.
 - Do not call `read_skill` when the current context is already sufficient to answer.
 - Do not call `read` for a file path unless the user provided that path or a prior successful tool result explicitly created or referenced that file.
 - Preserve the user's language for user-facing outputs unless the user explicitly asks for a different language.
