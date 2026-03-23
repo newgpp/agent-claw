@@ -1,0 +1,10 @@
+{
+  "name": "market-intel",
+  "source": {
+    "type": "local",
+    "path": "skills/market-intel"
+  },
+  "tools": ["tavily"],
+  "scripts": [],
+  "tags": ["finance", "news", "stocks", "research"]
+}

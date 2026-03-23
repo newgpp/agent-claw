@@ -1,0 +1,10 @@
+{
+  "name": "trend-research",
+  "source": {
+    "type": "local",
+    "path": "skills/trend-research"
+  },
+  "tools": ["tavily"],
+  "scripts": [],
+  "tags": ["research", "trends", "ai", "social"]
+}

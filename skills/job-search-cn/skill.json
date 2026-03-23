@@ -1,0 +1,10 @@
+{
+  "name": "job-search-cn",
+  "source": {
+    "type": "local",
+    "path": "skills/job-search-cn"
+  },
+  "tools": ["tavily"],
+  "scripts": [],
+  "tags": ["jobs", "china", "search", "recruiting"]
+}
