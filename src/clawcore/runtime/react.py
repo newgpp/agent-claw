@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 from clawcore.llm.base import BaseLLM, BasePlanner
 from clawcore.models import ExecutionPlan, PlanArtifact, PlanStatus, PlanSubgoal, ReActStep, ToolResult
+from clawcore.runtime.cache import action_signature, cache_written_file
+from clawcore.runtime.fast_path import try_fast_path_completion
+from clawcore.runtime.observation import build_observation, build_prompt_observation
 from clawcore.runtime.result import RuntimeRunResult
 from clawcore.skilling.models import SkillDefinition
 from clawcore.tooling.base import ToolExecutionContext
@@ -92,13 +92,14 @@ class ReActRuntime:
         base_instructions: str = "",
         workspace_dir: Path | None = None,
     ) -> str:
-        result = await self.run_debug_planner_first(
+        result = await self._run_debug_planner_first(
             user_input,
             skills=skills,
             active_skill=active_skill,
             max_steps=max_steps,
             base_instructions=base_instructions,
             workspace_dir=workspace_dir,
+            allow_fast_path=False,
         )
         return result.final_answer
 
@@ -112,13 +113,14 @@ class ReActRuntime:
         base_instructions: str = "",
         workspace_dir: Path | None = None,
     ) -> str:
-        result = await self.run_debug_planner_first(
+        result = await self._run_debug_planner_first(
             user_input,
             skills=skills,
             active_skill=active_skill,
             max_steps=max_steps,
             base_instructions=base_instructions,
             workspace_dir=workspace_dir,
+            allow_fast_path=False,
         )
         return result.final_answer
 
@@ -132,13 +134,14 @@ class ReActRuntime:
         base_instructions: str = "",
         workspace_dir: Path | None = None,
     ) -> RuntimeRunResult:
-        return await self.run_debug_planner_first(
+        return await self._run_debug_planner_first(
             user_input,
             skills=skills,
             active_skill=active_skill,
             max_steps=max_steps,
             base_instructions=base_instructions,
             workspace_dir=workspace_dir,
+            allow_fast_path=True,
         )
 
     async def run_debug_planner_first(
@@ -150,6 +153,27 @@ class ReActRuntime:
         max_steps: int = 5,
         base_instructions: str = "",
         workspace_dir: Path | None = None,
+    ) -> RuntimeRunResult:
+        return await self._run_debug_planner_first(
+            user_input,
+            skills=skills,
+            active_skill=active_skill,
+            max_steps=max_steps,
+            base_instructions=base_instructions,
+            workspace_dir=workspace_dir,
+            allow_fast_path=True,
+        )
+
+    async def _run_debug_planner_first(
+        self,
+        user_input: str,
+        *,
+        skills: list[SkillDefinition] | None = None,
+        active_skill: SkillDefinition | None = None,
+        max_steps: int = 5,
+        base_instructions: str = "",
+        workspace_dir: Path | None = None,
+        allow_fast_path: bool,
     ) -> RuntimeRunResult:
         if self.planner is None:
             raise NotImplementedError("Planned execution requires a configured planner.")
@@ -200,6 +224,7 @@ class ReActRuntime:
                 max_steps=max_steps,
                 workspace_dir=workspace_dir,
                 skills=resolved_skills,
+                allow_fast_path=allow_fast_path,
             )
             finished = await self._emit_run_finished(run_context, state, final_answer=final_answer)
             logger.info("Finished planner-first runtime with {} subgoal(s)", len(plan.subgoals))
@@ -227,6 +252,7 @@ class ReActRuntime:
         max_steps: int,
         workspace_dir: Path | None,
         skills: tuple[SkillDefinition, ...],
+        allow_fast_path: bool,
     ) -> str:
         if plan.is_direct_answer:
             plan.status = PlanStatus.COMPLETED
@@ -248,6 +274,7 @@ class ReActRuntime:
                 max_steps=max_steps,
                 workspace_dir=workspace_dir,
                 skills=skills,
+                allow_fast_path=allow_fast_path,
             )
             artifact = PlanArtifact(
                 name=subgoal.id,
@@ -341,6 +368,7 @@ class ReActRuntime:
         max_steps: int,
         workspace_dir: Path | None,
         skills: tuple[SkillDefinition, ...],
+        allow_fast_path: bool = True,
     ) -> str:
         successful_tool_calls: dict[str, str] = {}
 
@@ -387,10 +415,10 @@ class ReActRuntime:
             tool_result = ToolResult(name=result_tool_name, content=result_content)
             session.state.tool_results.append(tool_result)
             successful_tool_calls.setdefault(
-                self._action_signature(step.action.name, step.action.payload),
+                action_signature(step.action.name, step.action.payload),
                 result_content,
             )
-            self._cache_written_file(
+            cache_written_file(
                 state=session.state,
                 action_name=step.action.name,
                 action_payload=step.action.payload,
@@ -402,27 +430,30 @@ class ReActRuntime:
                     session.state.active_skill = selected_skill
                     if selected_skill not in session.state.loaded_skills:
                         session.state.loaded_skills.append(selected_skill)
-            observation = self._build_observation(
+            observation = build_observation(
                 tool_name=result_tool_name,
                 result_content=result_content,
                 action_payload=step.action.payload,
                 skills=skills,
+                resolve_skill_from_payload=self._resolve_skill_from_payload,
             )
-            prompt_observation = self._build_prompt_observation(
+            prompt_observation = build_prompt_observation(
                 tool_name=result_tool_name,
                 result_content=result_content,
                 action_payload=step.action.payload,
                 skills=skills,
+                resolve_skill_from_payload=self._resolve_skill_from_payload,
             )
             session.append_observation(observation, prompt_observation=prompt_observation)
             session.state.trace.record("observation", observation)
-            fast_path_answer = self._try_fast_path_completion(
-                state=session.state,
-                tool_name=result_tool_name,
-                result_content=result_content,
-            )
-            if fast_path_answer is not None:
-                return fast_path_answer
+            if allow_fast_path:
+                fast_path_answer = try_fast_path_completion(
+                    state=session.state,
+                    tool_name=result_tool_name,
+                    result_content=result_content,
+                )
+                if fast_path_answer is not None:
+                    return fast_path_answer
 
         raise RuntimeError("ReAct loop exceeded max_steps without a final answer.")
 
@@ -448,8 +479,8 @@ class ReActRuntime:
         state.events.append(called)
         state.sync_views()
 
-        action_signature = self._action_signature(action_name, action_payload)
-        cached_content = successful_tool_calls.get(action_signature)
+        signature = action_signature(action_name, action_payload)
+        cached_content = successful_tool_calls.get(signature)
         if cached_content is not None:
             result_content = (
                 "Duplicate tool call avoided. Reuse the previous successful result to answer the user.\n"
@@ -539,9 +570,6 @@ class ReActRuntime:
                 return skill
         return None
 
-    def _action_signature(self, tool_name: str, payload: dict[str, object]) -> str:
-        return f"{tool_name}:{json.dumps(payload, ensure_ascii=False, sort_keys=True)}"
-
     def _build_observation(
         self,
         *,
@@ -550,21 +578,14 @@ class ReActRuntime:
         action_payload: dict[str, object],
         skills: tuple[SkillDefinition, ...],
     ) -> str:
-        if tool_name != "read_skill":
-            return f"{tool_name}: {result_content}"
-
-        selected_skill = self._resolve_skill_from_payload(action_payload, skills)
-        payload = {
-            "skill_name": selected_skill.name if selected_skill is not None else str(
-                action_payload.get("skill", action_payload.get("skill_name", ""))
-            ).strip(),
-            "summary": self._summarize_skill_content(result_content, selected_skill),
-            "recommended_tools": self._extract_skill_recommended_tools(result_content, selected_skill),
-            "command_examples": self._extract_skill_command_examples(result_content),
-            "call_hint": self._extract_skill_call_hint(result_content),
-            "full_doc_available": True,
-        }
-        return "read_skill_summary: " + json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        """Compatibility wrapper around the extracted observation helper."""
+        return build_observation(
+            tool_name=tool_name,
+            result_content=result_content,
+            action_payload=action_payload,
+            skills=skills,
+            resolve_skill_from_payload=self._resolve_skill_from_payload,
+        )
 
     def _build_prompt_observation(
         self,
@@ -574,13 +595,13 @@ class ReActRuntime:
         action_payload: dict[str, object],
         skills: tuple[SkillDefinition, ...],
     ) -> str:
-        if tool_name == "tavily":
-            return self._summarize_tavily_observation(result_content)
-        return self._build_observation(
+        """Compatibility wrapper around the extracted prompt observation helper."""
+        return build_prompt_observation(
             tool_name=tool_name,
             result_content=result_content,
             action_payload=action_payload,
             skills=skills,
+            resolve_skill_from_payload=self._resolve_skill_from_payload,
         )
 
     def _build_step_summary(self, *, subgoal: PlanSubgoal, answer: str) -> str:
@@ -591,192 +612,3 @@ class ReActRuntime:
         if len(cleaned) <= limit:
             return cleaned
         return cleaned[: limit - 3] + "..."
-
-    def _summarize_tavily_observation(self, result_content: str) -> str:
-        try:
-            payload = json.loads(result_content)
-        except json.JSONDecodeError:
-            return f"tavily: {self._summarize_for_prompt(result_content)}"
-
-        if not isinstance(payload, dict):
-            return f"tavily: {self._summarize_for_prompt(result_content)}"
-
-        query = str(payload.get("query", "")).strip()
-        results = payload.get("results", [])
-        total_results = len(results) if isinstance(results, list) else 0
-        highlights: list[str] = []
-        if isinstance(results, list):
-            for item in results[:3]:
-                if not isinstance(item, dict):
-                    continue
-                title = str(item.get("title", "")).strip()
-                url = str(item.get("url", "")).strip()
-                if title and url:
-                    highlights.append(f"{title} ({url})")
-                elif title:
-                    highlights.append(title)
-                elif url:
-                    highlights.append(url)
-        summary = {
-            "query": query,
-            "result_count": total_results,
-            "top_results": highlights,
-        }
-        return "tavily_summary: " + json.dumps(summary, ensure_ascii=False, sort_keys=True)
-
-    def _cache_written_file(
-        self,
-        *,
-        state: RuntimeState,
-        action_name: str,
-        action_payload: dict[str, object],
-        workspace_dir: Path | None,
-    ) -> None:
-        if action_name != "write":
-            return
-        raw_path = str(action_payload.get("path", "")).strip()
-        content = action_payload.get("content")
-        if not raw_path or not isinstance(content, str):
-            return
-        resolved_path = self._resolve_workspace_path(raw_path, workspace_dir)
-        state.cached_files[str(resolved_path)] = content
-        state.sync_views()
-
-    def _resolve_workspace_path(self, raw_path: str, workspace_dir: Path | None) -> Path:
-        candidate = Path(raw_path)
-        if candidate.is_absolute():
-            return candidate
-        base_dir = workspace_dir or Path.cwd()
-        return (base_dir / candidate).resolve()
-
-    def _try_fast_path_completion(
-        self,
-        *,
-        state: RuntimeState,
-        tool_name: str,
-        result_content: str,
-    ) -> str | None:
-        task = (state.active_subgoal_task or "").strip()
-        if not task:
-            return None
-
-        expected_tools = self._infer_expected_tools_for_task(task)
-        if len(expected_tools) != 1 or tool_name not in expected_tools:
-            return None
-
-        if tool_name == "read_skill":
-            return None
-
-        subgoal_id = state.active_subgoal_id or "subgoal"
-        return (
-            f"Subgoal {subgoal_id} completed: "
-            f"{self._build_fast_path_summary(tool_name=tool_name, result_content=result_content)}"
-        )
-
-    def _infer_expected_tools_for_task(self, task: str) -> set[str]:
-        lower_task = task.lower()
-        expected: set[str] = set()
-        explicit_tool_aliases: dict[str, Iterable[str]] = {
-            "curl": ("curl", "wttr.in"),
-            "tavily": ("tavily",),
-            "send_email": ("send_email",),
-            "read_skill": ("read_skill",),
-            "exec_script": ("exec_script",),
-            "read": ("read ", "read the", "read file"),
-            "write": ("write ", "write it to a file", "write to a file", "save to a file"),
-        }
-        for tool_name, aliases in explicit_tool_aliases.items():
-            if any(alias in lower_task for alias in aliases):
-                expected.add(tool_name)
-        return expected
-
-    def _build_fast_path_summary(self, *, tool_name: str, result_content: str) -> str:
-        if tool_name == "write":
-            return self._summarize_for_prompt(result_content)
-        if tool_name == "send_email":
-            return self._summarize_for_prompt(result_content)
-        if tool_name == "tavily":
-            summary = self._summarize_tavily_observation(result_content)
-            return summary.removeprefix("tavily_summary: ")
-        return self._summarize_for_prompt(result_content)
-
-    def _summarize_skill_content(
-        self,
-        content: str,
-        skill: SkillDefinition | None,
-        *,
-        limit: int = 3,
-    ) -> list[str]:
-        summaries: list[str] = []
-        if skill is not None and skill.description.strip():
-            summaries.append(skill.description.strip())
-
-        for line in content.splitlines():
-            cleaned = line.strip()
-            if not cleaned:
-                continue
-            if cleaned.startswith(("---", "#", "```", "- ", "* ", "✅", "❌")):
-                continue
-            if ":" in cleaned and len(cleaned.split()) <= 4:
-                continue
-            if cleaned.startswith(("name:", "description:", "homepage:", "metadata:")):
-                continue
-            if cleaned in summaries:
-                continue
-            summaries.append(cleaned)
-            if len(summaries) >= limit:
-                break
-
-        return summaries[:limit]
-
-    def _extract_skill_recommended_tools(
-        self,
-        content: str,
-        skill: SkillDefinition | None,
-    ) -> list[str]:
-        tools: list[str] = []
-        if skill is not None:
-            for tool in skill.tools:
-                if tool not in tools:
-                    tools.append(tool)
-
-        for line in content.splitlines():
-            cleaned = line.strip()
-            if not cleaned:
-                continue
-            if cleaned.startswith(("curl ", "curl\"", "curl \"", "curl '")) and "curl" not in tools:
-                tools.append("curl")
-            if cleaned.startswith(("python ", "python3 ", "./")) and "exec_script" not in tools:
-                tools.append("exec_script")
-        return tools
-
-    def _extract_skill_command_examples(self, content: str, *, limit: int = 3) -> list[str]:
-        commands: list[str] = []
-        for raw_line in content.splitlines():
-            cleaned = raw_line.strip()
-            if not cleaned:
-                continue
-            if cleaned.startswith(("curl ", "curl\"", "curl \"", "curl '", "python ", "python3 ", "./")):
-                commands.append(cleaned)
-            if len(commands) >= limit:
-                break
-        return commands
-
-    def _extract_skill_call_hint(self, content: str) -> str | None:
-        command_examples = self._extract_skill_command_examples(content, limit=1)
-        if command_examples:
-            return command_examples[0]
-
-        for line in content.splitlines():
-            cleaned = line.strip()
-            if not cleaned:
-                continue
-            if cleaned.startswith(("curl ", "curl\"", "curl \"", "curl '")):
-                return cleaned
-            if "wttr.in/" in cleaned or "https://" in cleaned:
-                return cleaned
-
-        match = re.search(r"`([^`]*(?:curl|https?://|wttr\.in/)[^`]*)`", content)
-        if match is not None:
-            return match.group(1).strip()
-        return None

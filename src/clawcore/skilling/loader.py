@@ -17,6 +17,10 @@ def load_skills(root_dir: str | Path) -> list[SkillDefinition]:
     if not root.exists() or not root.is_dir():
         return []
 
+    direct_skill = _load_skill_from_directory(root)
+    if direct_skill is not None:
+        return [direct_skill]
+
     skills: list[SkillDefinition] = []
     for directory in sorted((entry for entry in root.iterdir() if entry.is_dir()), key=lambda p: p.name):
         skill = _load_skill_from_directory(directory)
