@@ -5,12 +5,7 @@ from __future__ import annotations
 import json
 
 from clawcore.skilling.models import SkillDefinition
-from clawcore.skilling.runtime_summary import (
-    extract_skill_call_hint,
-    extract_skill_command_examples,
-    extract_skill_recommended_tools,
-    summarize_skill_content,
-)
+from clawcore.skilling.runtime_summary import summarize_skill_content
 
 
 def build_observation(
@@ -31,9 +26,6 @@ def build_observation(
             action_payload.get("skill", action_payload.get("skill_name", ""))
         ).strip(),
         "summary": summarize_skill_content(result_content, selected_skill),
-        "recommended_tools": extract_skill_recommended_tools(result_content, selected_skill),
-        "command_examples": extract_skill_command_examples(result_content),
-        "call_hint": extract_skill_call_hint(result_content),
         "full_doc_available": True,
     }
     return "read_skill_summary: " + json.dumps(payload, ensure_ascii=False, sort_keys=True)
