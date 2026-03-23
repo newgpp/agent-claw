@@ -150,6 +150,8 @@ def test_openai_react_llm_parses_action_response() -> None:
     )
     assert "If a skill seems relevant but you need its full procedure" in request["messages"][0]["content"]
     assert "Do not call `read` for a file path unless the user provided that path" in request["messages"][0]["content"]
+    assert "Preserve the user's language for user-facing outputs" in request["messages"][0]["content"]
+    assert "default to the user's language" in request["messages"][0]["content"]
     assert "Do not insert unnecessary backslashes before markdown punctuation" in request["messages"][0]["content"]
     assert '"active_skill": "file-summary"' in request["messages"][1]["content"]
     assert '"loaded_skills": ["file-summary"]' in request["messages"][1]["content"]

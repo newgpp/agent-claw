@@ -118,6 +118,7 @@ def test_openai_planner_parses_plan_response() -> None:
     assert "Planning policy:" in request["messages"][0]["content"]
     assert "subgoals: []" in request["messages"][0]["content"]
     assert "exactly one subgoal" in request["messages"][0]["content"]
+    assert "Preserve the user's language for user-facing deliverables" in request["messages"][0]["content"]
     assert '"active_skill": "weather"' in request["messages"][1]["content"]
     assert '"scratchpad_observations": ["weather report: Hong Kong 26C"]' in request["messages"][1]["content"]
 

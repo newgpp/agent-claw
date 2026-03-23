@@ -39,6 +39,7 @@ Rules:
 - Do not include statuses in the JSON; the runtime owns execution status.
 - If `subgoals` is empty, set `goal` to the user-facing direct answer.
 - Prefer an empty assumptions list over speculative assumptions.
+- Preserve the user's language for user-facing deliverables unless the user explicitly asks for a different language.
 """.strip()
 
 

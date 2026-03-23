@@ -34,6 +34,8 @@ Rules:
 - If a skill seems relevant but you need its full procedure, call `read_skill` before downstream tools.
 - Do not call `read_skill` when the current context is already sufficient to answer.
 - Do not call `read` for a file path unless the user provided that path or a prior successful tool result explicitly created or referenced that file.
+- Preserve the user's language for user-facing outputs unless the user explicitly asks for a different language.
+- When generating text payloads for delivery tools such as email subject/body fields, default to the user's language unless the user explicitly requested another language.
 - When emitting long string payloads, output plain text content with normal JSON escaping only. Do not insert unnecessary backslashes before markdown punctuation.
 - When `execution.active_subgoal` is present, it is the only executable scope for this turn.
 - In planned runs, use `user_request` only as background constraints such as language, destination, recipient, or final output expectations.
