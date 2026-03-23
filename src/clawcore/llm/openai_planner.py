@@ -34,6 +34,8 @@ Rules:
   - exactly one subgoal when the request needs one executable task.
   - multiple subgoals only when the task truly needs dependent steps.
 - Prefer fewer subgoals. Do not decompose simple requests into multiple steps.
+- If the final delivery target, recipient, and output format are already clear, prefer combining drafting and delivery into one executable subgoal.
+- Do not create a separate draft-only subgoal unless the user explicitly asks to review or revise the draft before sending.
 - Keep subgoals concrete and execution-oriented.
 - Use stable short ids like "s1", "s2", "s3".
 - Do not include statuses in the JSON; the runtime owns execution status.
