@@ -6,7 +6,7 @@ from clawcore.llm.mock import MockLLM, MockPlanner
 from clawcore.models import ExecutionPlan, PlanSubgoal, ReActStep, ToolCall
 from clawcore.runtime.session import AgentSession
 from clawcore.runtime.react import ReActRuntime
-from clawcore.tooling import CurlTool, ReadTool, ToolExecutor, ToolPolicy, ToolRegistry, WriteTool
+from clawcore.tooling import CurlTool, ReadTool, ToolExecutor, ToolRegistry, WriteTool
 
 
 def build_runtime(step_fn) -> ReActRuntime:  # type: ignore[no-untyped-def]
@@ -14,7 +14,7 @@ def build_runtime(step_fn) -> ReActRuntime:  # type: ignore[no-untyped-def]
     registry.register(ReadTool())
     registry.register(WriteTool())
     registry.register(CurlTool())
-    executor = ToolExecutor(registry, policy=ToolPolicy())
+    executor = ToolExecutor(registry)
     return ReActRuntime(llm=MockLLM(step_fn), tool_executor=executor)
 
 
@@ -23,7 +23,7 @@ def build_planned_runtime(step_fn, plan_fn) -> ReActRuntime:  # type: ignore[no-
     registry.register(ReadTool())
     registry.register(WriteTool())
     registry.register(CurlTool())
-    executor = ToolExecutor(registry, policy=ToolPolicy())
+    executor = ToolExecutor(registry)
     return ReActRuntime(
         llm=MockLLM(step_fn),
         planner=MockPlanner(plan_fn),

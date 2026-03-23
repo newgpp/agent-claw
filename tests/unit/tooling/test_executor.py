@@ -2,7 +2,6 @@ import asyncio
 
 from clawcore.tooling.base import BaseTool, ToolExecutionContext
 from clawcore.tooling.executor import ToolExecutor
-from clawcore.tooling.policy import ToolPolicy
 from clawcore.tooling.registry import ToolRegistry
 from clawcore.tooling.result import ToolExecutionStatus
 
@@ -35,7 +34,7 @@ def test_executor_returns_success_result() -> None:
 def test_executor_returns_blocked_result() -> None:
     registry = ToolRegistry()
     registry.register(EchoTool())
-    executor = ToolExecutor(registry, policy=ToolPolicy(deny={"echo"}))
+    executor = ToolExecutor(registry, deny={"echo"})
 
     result = asyncio.run(executor.execute("echo", {"text": "hello"}))
 

@@ -34,7 +34,7 @@ Rules:
 - If a skill seems relevant but you need its full procedure, call `read_skill` before downstream tools.
 - Do not call `read_skill` when the current context is already sufficient to answer.
 - Do not call `read` for a file path unless the user provided that path or a prior successful tool result explicitly created or referenced that file.
-- When emitting long string payloads such as `send_email.body` or `write.content`, output plain text content with normal JSON escaping only. Do not insert unnecessary backslashes before markdown punctuation.
+- When emitting long string payloads, output plain text content with normal JSON escaping only. Do not insert unnecessary backslashes before markdown punctuation.
 - When `execution.active_subgoal` is present, it is the only executable scope for this turn.
 - In planned runs, use `user_request` only as background constraints such as language, destination, recipient, or final output expectations.
 - Do not start later subgoals just because you can infer them from the user request, plan summary, or prior observations.

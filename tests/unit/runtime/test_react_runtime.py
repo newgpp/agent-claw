@@ -9,7 +9,7 @@ from clawcore.models import ExecutionPlan, PlanStatus, PlanSubgoal, ReActStep, T
 from clawcore.runtime.session import AgentSession
 from clawcore.runtime.react import ReActRuntime
 from clawcore.skilling.models import SkillDefinition
-from clawcore.tooling import CurlTool, ReadTool, ToolExecutor, ToolPolicy, ToolRegistry, WriteTool
+from clawcore.tooling import CurlTool, ReadTool, ToolExecutor, ToolRegistry, WriteTool
 from clawcore.tooling.base import ToolExecutionContext
 from common.observability import current_observability_context
 
@@ -19,7 +19,7 @@ def build_tool_executor() -> ToolExecutor:
     registry.register(ReadTool())
     registry.register(WriteTool())
     registry.register(CurlTool())
-    return ToolExecutor(registry, policy=ToolPolicy())
+    return ToolExecutor(registry)
 
 
 def build_planned_runtime(step_fn, plan_fn) -> ReActRuntime:  # type: ignore[no-untyped-def]
@@ -123,7 +123,7 @@ def test_runtime_promotes_active_skill_after_read_skill(tmp_path: Path) -> None:
     from clawcore.tooling import ReadSkillTool
 
     registry.register(ReadSkillTool())
-    executor = ToolExecutor(registry, policy=ToolPolicy())
+    executor = ToolExecutor(registry)
 
     def step_fn(session: AgentSession) -> ReActStep:
         if session.state.active_skill is None:
@@ -167,7 +167,7 @@ def test_runtime_summarizes_read_skill_observation(tmp_path: Path) -> None:
     from clawcore.tooling import ReadSkillTool
 
     registry.register(ReadSkillTool())
-    executor = ToolExecutor(registry, policy=ToolPolicy())
+    executor = ToolExecutor(registry)
 
     def step_fn(session: AgentSession) -> ReActStep:
         if not session.state.scratchpad:
@@ -204,7 +204,7 @@ def test_runtime_promotes_active_skill_after_read_skill_name_alias(tmp_path: Pat
     from clawcore.tooling import ReadSkillTool
 
     registry.register(ReadSkillTool())
-    executor = ToolExecutor(registry, policy=ToolPolicy())
+    executor = ToolExecutor(registry)
 
     def step_fn(session: AgentSession) -> ReActStep:
         if session.state.active_skill is None:
@@ -247,7 +247,7 @@ def test_runtime_can_load_multiple_skills_in_one_run(tmp_path: Path) -> None:
     from clawcore.tooling import ReadSkillTool
 
     registry.register(ReadSkillTool())
-    executor = ToolExecutor(registry, policy=ToolPolicy())
+    executor = ToolExecutor(registry)
 
     def step_fn(session: AgentSession) -> ReActStep:
         loaded_names[:] = [skill.name for skill in session.state.loaded_skills]
@@ -286,7 +286,7 @@ def test_runtime_avoids_duplicate_tool_calls(tmp_path: Path) -> None:
 
     registry = ToolRegistry()
     registry.register(CountingReadTool())
-    executor = ToolExecutor(registry, policy=ToolPolicy())
+    executor = ToolExecutor(registry)
     (tmp_path / "note.txt").write_text("runtime text", encoding="utf-8")
 
     def step_fn(session: AgentSession) -> ReActStep:

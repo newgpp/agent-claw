@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 from clawcore.skilling.models import SkillDefinition
-from clawcore.tooling import CurlTool, ReadTool, ToolExecutionContext, ToolExecutor, ToolPolicy, ToolRegistry, WriteTool
+from clawcore.tooling import CurlTool, ReadTool, ToolExecutionContext, ToolExecutor, ToolRegistry, WriteTool
 from clawcore.tooling.result import ToolExecutionStatus
 
 
@@ -22,7 +22,7 @@ def test_tool_execution_pipeline_matches_fixture_cases(tmp_path: Path) -> None:
     registry.register(ReadTool())
     registry.register(WriteTool())
     registry.register(CurlTool())
-    executor = ToolExecutor(registry, policy=ToolPolicy(deny={"blocked_tool"}))
+    executor = ToolExecutor(registry, deny={"blocked_tool"})
 
     read_target = tmp_path / "input.txt"
     read_target.write_text("input text", encoding="utf-8")
@@ -49,6 +49,6 @@ def test_tool_execution_pipeline_matches_fixture_cases(tmp_path: Path) -> None:
         elif name == "invalid input":
             assert result.status == ToolExecutionStatus.ERROR
         elif name == "blocked tool":
-            blocked_executor = ToolExecutor(registry, policy=ToolPolicy(deny={"read"}))
+            blocked_executor = ToolExecutor(registry, deny={"read"})
             blocked_result = asyncio.run(blocked_executor.execute("read", payload, context=context))
             assert blocked_result.status == ToolExecutionStatus.BLOCKED

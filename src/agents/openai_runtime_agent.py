@@ -11,7 +11,7 @@ from agents.base import AgentDescriptor
 from agents.runtime_agent import AgentRunConfig, RuntimeAgent
 from clawcore.llm import OpenAIPlanner, OpenAIReActConfig, OpenAIReActLLM
 from clawcore.runtime import ReActRuntime
-from clawcore.tooling import BaseTool, ReadSkillTool, ToolExecutor, ToolPolicy, ToolRegistry
+from clawcore.tooling import BaseTool, ReadSkillTool, ToolAccess, ToolExecutor, ToolRegistry
 
 
 def _require_env(env: Mapping[str, str], name: str) -> str:
@@ -107,7 +107,7 @@ class OpenAIRuntimeAgent(RuntimeAgent):
         tools: Sequence[BaseTool],
         options: OpenAIRuntimeAgentOptions | None = None,
         client: Any | None = None,
-        policy: ToolPolicy | None = None,
+        access: ToolAccess | None = None,
     ) -> None:
         resolved_options = options or OpenAIRuntimeAgentOptions()
         llm_config = resolved_options.llm_config or load_openai_react_config_from_env()
@@ -118,6 +118,10 @@ class OpenAIRuntimeAgent(RuntimeAgent):
         runtime = ReActRuntime(
             llm=OpenAIReActLLM(llm_config, client=client),
             planner=OpenAIPlanner(llm_config, client=client),
-            tool_executor=ToolExecutor(registry, policy=policy or ToolPolicy()),
+            tool_executor=ToolExecutor(
+                registry,
+                allow=set(access.allow) if access is not None else None,
+                deny=set(access.deny) if access is not None else None,
+            ),
         )
         super().__init__(runtime, config=resolved_options.run_config)

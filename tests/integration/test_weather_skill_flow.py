@@ -6,7 +6,7 @@ from clawcore.models import ReActStep, ToolCall
 from clawcore.runtime.react import ReActRuntime
 from clawcore.runtime.session import AgentSession
 from clawcore.skilling.loader import load_skills
-from clawcore.tooling import ReadSkillTool, ToolExecutor, ToolPolicy, ToolRegistry
+from clawcore.tooling import ReadSkillTool, ToolExecutor, ToolRegistry
 from clawcore.tooling.base import BaseTool, ToolExecutionContext
 
 
@@ -31,7 +31,7 @@ def build_runtime(step_fn) -> ReActRuntime:  # type: ignore[no-untyped-def]
     registry = ToolRegistry()
     registry.register(ReadSkillTool())
     registry.register(FakeWeatherTool())
-    executor = ToolExecutor(registry, policy=ToolPolicy())
+    executor = ToolExecutor(registry)
     return ReActRuntime(llm=MockLLM(step_fn), tool_executor=executor)
 
 
