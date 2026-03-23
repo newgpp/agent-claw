@@ -26,7 +26,6 @@ from common.observability import (
     reset_trace_id,
 )
 from common.context import RunContext
-from clawcore.runtime.hooks import RuntimeHook, emit_hook
 from clawcore.runtime.prompt_builder import PlanningPromptBuilder, SystemPromptBuilder
 from clawcore.runtime.session import AgentSession
 from clawcore.runtime.state import RuntimeState
@@ -41,7 +40,6 @@ class ReActRuntime:
     planner: BasePlanner | None = None
     prompt_builder: SystemPromptBuilder = field(default_factory=SystemPromptBuilder)
     planning_prompt_builder: PlanningPromptBuilder = field(default_factory=PlanningPromptBuilder)
-    event_hook: RuntimeHook | None = None
 
     async def run(
         self,
@@ -475,7 +473,6 @@ class ReActRuntime:
             payload={"tool": action_name, "payload": action_payload},
         )
         run_context.emit(called)
-        await emit_hook(called, self.event_hook)
         state.events.append(called)
         state.sync_views()
 
@@ -514,7 +511,6 @@ class ReActRuntime:
             },
         )
         run_context.emit(returned)
-        await emit_hook(returned, self.event_hook)
         state.events.append(returned)
         state.sync_views()
         return result_tool_name, result_status, result_content
@@ -527,7 +523,6 @@ class ReActRuntime:
             payload={"user_input": state.user_input},
         )
         run_context.emit(run_started)
-        await emit_hook(run_started, self.event_hook)
         state.events.append(run_started)
         state.sync_views()
 
@@ -545,7 +540,6 @@ class ReActRuntime:
             payload={"final_answer": final_answer},
         )
         run_context.emit(finished)
-        await emit_hook(finished, self.event_hook)
         state.events.append(finished)
         state.trace.record("final_answer", final_answer)
         state.sync_views()
