@@ -497,6 +497,59 @@ def test_runtime_uses_cached_file_content_across_subgoals_without_read(tmp_path:
     assert [item.name for item in result.state.tool_results] == ["write"]
 
 
+def test_runtime_preserves_prompt_observations_as_subgoal_handoffs(tmp_path: Path) -> None:
+    (tmp_path / "research.txt").write_text(
+        "OpenAI released a new agent update on 2026-03-23.",
+        encoding="utf-8",
+    )
+
+    def plan_fn(session: AgentSession) -> ExecutionPlan:
+        return ExecutionPlan(
+            goal="Research and summarize",
+            subgoals=[
+                PlanSubgoal(id="s1", task="Read the research note"),
+                PlanSubgoal(id="s2", task="Summarize the note"),
+            ],
+            success_criteria=["Research is retrieved", "Summary is delivered"],
+        )
+
+    def step_fn(session: AgentSession) -> ReActStep:
+        if session.state.active_subgoal_id == "s1":
+            if not session.state.scratchpad:
+                return ReActStep(
+                    thought="Read the note.",
+                    action=ToolCall(name="read", payload={"path": "research.txt"}),
+                )
+            return ReActStep(thought="Research captured.", final_answer="research note ready")
+        if session.state.active_subgoal_id == "s2":
+            handoffs = session.state.subgoal_handoffs
+            assert handoffs == [
+                {
+                    "subgoal_id": "s1",
+                    "observations": ["read: OpenAI released a new agent update on 2026-03-23."],
+                }
+            ]
+            return ReActStep(
+                thought="Use preserved handoff observations.",
+                final_answer="summary ready",
+            )
+        return ReActStep(thought="fallback", final_answer="done")
+
+    runtime = build_planned_runtime(step_fn, plan_fn)
+
+    result = asyncio.run(
+        runtime.run_debug_planner_first("summarize research", workspace_dir=tmp_path, max_steps=2)
+    )
+
+    assert result.final_answer == "summary ready"
+    assert result.state.subgoal_handoffs == [
+        {
+            "subgoal_id": "s1",
+            "observations": ["read: OpenAI released a new agent update on 2026-03-23."],
+        }
+    ]
+
+
 def test_runtime_fast_paths_single_tool_subgoal_completion(tmp_path: Path) -> None:
     (tmp_path / "weather.txt").write_text("Hong Kong 26C", encoding="utf-8")
 

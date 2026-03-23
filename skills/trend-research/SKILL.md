@@ -33,7 +33,11 @@ This repository currently exposes only the built-in `tavily` **search** tool.
 
 - Prefer `topic: "news"` for fast-moving developments
 - Prefer `search_depth: "advanced"` for important summaries
-- Use query text to emulate domain targeting, for example `site:x.com` or `site:xiaohongshu.com`
+- Prefer `time_range: "day"` or `time_range: "week"` for latest/trending requests
+- Use `start_date` / `end_date` when the user gives an explicit date window
+- Prefer `include_domains` for strict domain targeting, for example `["x.com", "twitter.com"]` or `["xiaohongshu.com"]`
+- Use `exclude_domains` to suppress obvious noise sources such as `reddit.com`, `youtube.com`, `medium.com`, `facebook.com`
+- Use query text `site:x.com` style hints only as a fallback, not as the primary filtering mechanism
 - Do **not** assume Tavily `extract`, `crawl`, or `research` APIs are available unless the runtime adds those tools
 
 ## Query Patterns
@@ -44,17 +48,21 @@ Use domain hints inside the query:
 
 ```json
 {
-  "query": "site:x.com AI agent 热点 OR site:xiaohongshu.com AI智能体 热门 近一周",
+  "query": "AI agent 热点 近一周",
   "max_results": 8,
   "search_depth": "advanced",
-  "topic": "news"
+  "topic": "news",
+  "time_range": "week",
+  "include_domains": ["x.com", "twitter.com", "xiaohongshu.com"],
+  "exclude_domains": ["reddit.com", "youtube.com", "medium.com", "facebook.com"]
 }
 ```
 
 Recommended query building:
 
-- Add `site:x.com` for X public pages
-- Add `site:xiaohongshu.com` for Xiaohongshu public pages
+- Prefer `include_domains: ["x.com", "twitter.com"]` for X public pages
+- Prefer `include_domains: ["xiaohongshu.com"]` for Xiaohongshu public pages
+- Add `exclude_domains` when the user wants platform-specific discussion, so generic blog mirrors or video pages do not dominate
 - Add timeframe words like `today`, `this week`, `近一周`, `最近`
 - Add topic anchors like `热点`, `趋势`, `讨论`, `发布`, `评测`
 
@@ -84,7 +92,16 @@ Example expanded query:
   "query": "latest LLM and AI agent progress official blog launch release research this week OpenAI Anthropic Google DeepMind Meta",
   "max_results": 10,
   "search_depth": "advanced",
-  "topic": "news"
+  "topic": "news",
+  "time_range": "week",
+  "include_domains": [
+    "openai.com",
+    "anthropic.com",
+    "deepmind.google",
+    "blog.google",
+    "x.ai",
+    "langchain.com"
+  ]
 }
 ```
 

@@ -281,6 +281,13 @@ class ReActRuntime:
                 kind="subgoal_result",
             )
             session.state.artifacts.append(artifact)
+            if session.state.prompt_observations:
+                session.state.subgoal_handoffs.append(
+                    {
+                        "subgoal_id": subgoal.id,
+                        "observations": list(session.state.prompt_observations),
+                    }
+                )
             session.state.step_summaries.append(
                 self._build_step_summary(subgoal=subgoal, answer=subgoal_answer)
             )

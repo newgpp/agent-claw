@@ -30,6 +30,8 @@ class RuntimeState:
     prompt_observations: list[str] = field(default_factory=list)
     # Short summaries of completed steps used as cross-step handoff context.
     step_summaries: list[str] = field(default_factory=list)
+    # Prompt-safe observations preserved from completed subgoals for later reasoning.
+    subgoal_handoffs: list[dict[str, object]] = field(default_factory=list)
     # Structured results returned by executed tools.
     tool_results: list[ToolResult] = field(default_factory=list)
     # Structured execution plan for planned runs, if one exists.
@@ -67,6 +69,16 @@ class RuntimeState:
             "active_skill": self.active_skill.name if self.active_skill is not None else None,
             "loaded_skills": [skill.name for skill in self.loaded_skills],
             "step_summaries": list(self.step_summaries),
+            "subgoal_handoffs": [
+                {
+                    "subgoal_id": str(item.get("subgoal_id", "")),
+                    "observations": [
+                        self._summarize_text(str(observation), limit=400)
+                        for observation in list(item.get("observations", []))
+                    ],
+                }
+                for item in self.subgoal_handoffs
+            ],
             "observations": list(self.prompt_observations),
             "plan": self._serialize_plan_for_prompt(),
             "active_subgoal_id": self.active_subgoal_id,
@@ -95,6 +107,16 @@ class RuntimeState:
                 "active_skill": self.active_skill.name if self.active_skill is not None else None,
                 "loaded_skills": [skill.name for skill in self.loaded_skills],
                 "step_summaries": list(self.step_summaries),
+                "subgoal_handoffs": [
+                    {
+                        "subgoal_id": str(item.get("subgoal_id", "")),
+                        "observations": [
+                            self._summarize_text(str(observation), limit=1200)
+                            for observation in list(item.get("observations", []))
+                        ],
+                    }
+                    for item in self.subgoal_handoffs
+                ],
                 "observations": list(self.prompt_observations),
                 "artifacts": [
                     {
