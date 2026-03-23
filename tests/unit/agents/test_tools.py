@@ -167,6 +167,60 @@ def test_tavily_tool_falls_back_to_general_topic_for_invalid_value(
     assert FakeAsyncClient.calls[0][1]["topic"] == "general"
 
 
+def test_tavily_tool_supports_finance_topic(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setenv("TAVILY_API_URL", "https://api.tavily.test/search")
+    monkeypatch.setattr("agents.tools.tavily.httpx.AsyncClient", FakeAsyncClient)
+    FakeAsyncClient.calls.clear()
+
+    asyncio.run(
+        TavilyTool().execute(
+            {"query": "tesla latest news", "topic": "finance"},
+            ToolExecutionContext(),
+        )
+    )
+
+    assert FakeAsyncClient.calls[0][1]["topic"] == "finance"
+
+
+def test_tavily_tool_distributes_content_budget_across_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setenv("TAVILY_API_URL", "https://api.tavily.test/search")
+
+    class MultiResultClient(FakeAsyncClient):
+        async def post(self, url: str, json: dict[str, object]) -> FakeHTTPResponse:
+            type(self).calls.append((url, json))
+            return FakeHTTPResponse(
+                {
+                    "answer": "Market update",
+                    "results": [
+                        {
+                            "title": f"Result {index}",
+                            "url": f"https://example.com/{index}",
+                            "content": "X" * 1200,
+                        }
+                        for index in range(6)
+                    ],
+                }
+            )
+
+    monkeypatch.setattr("agents.tools.tavily.httpx.AsyncClient", MultiResultClient)
+
+    result = asyncio.run(
+        TavilyTool().execute(
+            {"query": "ai market news", "max_results": 6},
+            ToolExecutionContext(),
+        )
+    )
+
+    payload = json.loads(result)
+
+    # 2400 total budget across 6 results -> 400 chars each.
+    assert len(payload["results"]) == 6
+    assert len(payload["results"][0]["content"]) == 400
+    assert payload["results"][0]["content"].endswith("...")
+
+
 def test_send_email_requires_required_fields() -> None:
     tool = SendEmailTool()
 

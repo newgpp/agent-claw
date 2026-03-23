@@ -14,8 +14,9 @@ class TavilyTool(BaseTool):
     """Search the web via Tavily and return normalized JSON results."""
 
     name = "tavily"
-    max_content_chars = 800
-    max_answer_chars = 800
+    max_content_chars = 600
+    max_answer_chars = 400
+    max_total_content_chars = 2400
     description = (
         "Search the web using Tavily. "
         "Payload: {query:string, max_results?:int, search_depth?:string, topic?:string}."
@@ -39,7 +40,7 @@ class TavilyTool(BaseTool):
             raise ValueError("tavily 'search_depth' must be 'basic' or 'advanced'.")
 
         topic = str(payload.get("topic", "general")).strip().lower() or "general"
-        if topic not in {"general", "news"}:
+        if topic not in {"general", "news", "finance"}:
             topic = "general"
 
         base_url = os.environ.get("TAVILY_API_URL", "https://api.tavily.com/search").strip()
@@ -56,6 +57,13 @@ class TavilyTool(BaseTool):
             response.raise_for_status()
             data = response.json()
 
+        results = [
+            item
+            for item in data.get("results", [])
+            if isinstance(item, dict)
+        ]
+        content_limit = self._content_limit_for_results(len(results))
+
         normalized = {
             "query": query,
             "answer": self._truncate_text(str(data.get("answer", "")).strip(), limit=self.max_answer_chars),
@@ -65,11 +73,10 @@ class TavilyTool(BaseTool):
                     "url": str(item.get("url", "")).strip(),
                     "content": self._truncate_text(
                         str(item.get("content", "")).strip(),
-                        limit=self.max_content_chars,
+                        limit=content_limit,
                     ),
                 }
-                for item in data.get("results", [])
-                if isinstance(item, dict)
+                for item in results
             ],
         }
         return json.dumps(normalized, ensure_ascii=False, sort_keys=True)
@@ -78,3 +85,9 @@ class TavilyTool(BaseTool):
         if len(value) <= limit:
             return value
         return value[: limit - 3] + "..."
+
+    def _content_limit_for_results(self, result_count: int) -> int:
+        if result_count <= 0:
+            return self.max_content_chars
+        per_result_budget = max(160, self.max_total_content_chars // result_count)
+        return min(self.max_content_chars, per_result_budget)
